@@ -717,7 +717,7 @@ local function playHatch(eggId, petName, forced)
 	local bob = RunService.RenderStepped:Connect(function()
 		petV.Position = center + UDim2.fromOffset(0, math.sin(os.clock() * 3) * 8)
 	end)
-	local nm = label(overlay, { Text = petName, Size = UDim2.fromOffset(520, 70), AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0.45, 175), ZIndex = 57, TextTransparency = 1 })
+	local nm = label(overlay, { Text = Config.PetName(petName), Size = UDim2.fromOffset(520, 70), AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0.45, 175), ZIndex = 57, TextTransparency = 1 })
 	nm.UIStroke.Thickness = 4
 	local rl = label(overlay, { Text = def.Rarity:upper() .. "  ·  " .. def.Power .. " poder", TextColor3 = rar.Color, Size = UDim2.fromOffset(520, 38),
 		AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0.45, 245), ZIndex = 57, TextTransparency = 1 })

@@ -30,6 +30,14 @@ Config.Pets = {
 	NexusDragon = { Rarity = "Legendary", Power = 150, Color = Color3.fromRGB(130, 220, 255) },
 }
 
+-- Nombre visible de una mascota: usa def.Display si existe; si no, separa el CamelCase ("NexusDragon" -> "Nexus Dragon")
+function Config.PetName(id)
+	local def = Config.Pets[id]
+	if def and def.Display then return def.Display end
+	local s = tostring(id):gsub("(%l)(%u)", "%1 %2"):gsub("(%u)(%u%l)", "%1 %2")
+	return s
+end
+
 -- Probabilidades en % (se muestran al jugador). Zone 1 = disponible desde el inicio (lobby).
 Config.Eggs = {
 	NexusEgg = {
@@ -63,10 +71,10 @@ Config.Machines = {
 
 -- Esencia AFK (Zona de Meditación = Parts con tag "MeditationZone"). La otorga solo el servidor y NO se puede tradear:
 -- vive como número en los datos del jugador y ningún remote la escribe; un futuro trade solo debe mover data.Pets.
--- (valores provisionales)
+-- Tope de 15 min: Roblox expulsa tras 20 min sin input, así el ciclo se puede completar 100% AFK.
 Config.Meditation = {
 	SecondsPerEssence = 60, -- 1 Esencia por minuto dentro de la zona
-	Cap = 35,               -- tope por ciclo (35 Esencia = 35 min AFK)
+	Cap = 15,               -- tope por ciclo (15 Esencia = 15 min AFK)
 	Cooldown = 3600,        -- recarga al llegar al tope: 1 h que solo avanza mientras el jugador está conectado
 }
 
