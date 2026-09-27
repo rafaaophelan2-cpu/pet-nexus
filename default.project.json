@@ -1,0 +1,35 @@
+{
+  "name": "pet-nexus",
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "$ignoreUnknownInstances": true,
+      "PetNexus": {
+        "$className": "Folder",
+        "$ignoreUnknownInstances": true,
+        "Config": { "$path": "src/shared/Config.luau" },
+        "Icons": { "$path": "src/shared/Icons.luau" }
+      }
+    },
+    "ServerScriptService": {
+      "$ignoreUnknownInstances": true,
+      "DataService": { "$path": "src/server/DataService.luau" },
+      "PetNexusServer": { "$path": "src/server/PetNexusServer.server.luau" }
+    },
+    "ServerStorage": {
+      "$ignoreUnknownInstances": true,
+      "PetNexusBuild": {
+        "$className": "Folder",
+        "$ignoreUnknownInstances": true,
+        "WorldBuilder": { "$path": "src/build/WorldBuilder.luau" }
+      }
+    },
+    "StarterPlayer": {
+      "$ignoreUnknownInstances": true,
+      "StarterPlayerScripts": {
+        "$ignoreUnknownInstances": true,
+        "PetNexusClient": { "$path": "src/client/PetNexusClient.client.luau" }
+      }
+    }
+  }
+}
