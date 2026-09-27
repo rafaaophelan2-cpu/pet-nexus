@@ -61,6 +61,15 @@ Config.Machines = {
 	Rainbow    = { Icon = "Rainbow",    Name = "Máquina Arcoíris",   Built = false },
 }
 
+-- Esencia AFK (Zona de Meditación = Parts con tag "MeditationZone"). La otorga solo el servidor y NO se puede tradear:
+-- vive como número en los datos del jugador y ningún remote la escribe; un futuro trade solo debe mover data.Pets.
+-- (valores provisionales)
+Config.Meditation = {
+	SecondsPerEssence = 60, -- 1 Esencia por minuto dentro de la zona
+	Cap = 35,               -- tope por ciclo (35 Esencia = 35 min AFK)
+	Cooldown = 3600,        -- recarga al llegar al tope: 1 h que solo avanza mientras el jugador está conectado
+}
+
 -- Orden de mundos (menú de TP). Solo los que están en Config.Dimensions son jugables.
 Config.DimensionList = {
 	{ Id = "Nexus",      Display = "Nexus",      Color = Color3.fromRGB(130, 210, 255), Lobby = "Nexus Plaza",    Vehicle = "Nexus Airship" },

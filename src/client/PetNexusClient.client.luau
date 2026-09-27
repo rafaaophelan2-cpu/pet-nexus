@@ -117,6 +117,53 @@ local function setCurrencyIcon(dim)
 end
 setCurrencyIcon("Nexus")
 
+---------------------------------------------------------------- Esencia + Zona de Meditación (el estado lo decide el servidor: atributos del jugador)
+local MED_PURPLE = Color3.fromRGB(215, 175, 255)
+local essRow = glass(hud, { Size = UDim2.fromOffset(200, 48), Position = UDim2.fromOffset(34, -64), Visible = false })
+local essIcon = Icons.Make(hud, "Meditation", { Size = UDim2.fromOffset(62, 62), Position = UDim2.fromOffset(2, -71), ZIndex = 3, Visible = false })
+local essText = label(essRow, { Text = "0", Size = UDim2.new(1, -60, 0, 36), Position = UDim2.fromOffset(40, 6), TextXAlignment = Enum.TextXAlignment.Left })
+gradient(essText, Color3.fromRGB(255, 255, 255), MED_PURPLE)
+local essHead = label(essRow, { Text = "ESENCIA", Size = UDim2.fromOffset(200, 16), Position = UDim2.fromOffset(42, -10), TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = MED_PURPLE })
+
+local medBar = glass(gui, { Size = UDim2.fromOffset(400, 58), Position = UDim2.new(0.5, -200, 1, -150), Visible = false })
+local medTitle = label(medBar, { Text = "", Size = UDim2.new(1, -40, 0, 24), Position = UDim2.fromOffset(20, 5) })
+local medBg = Instance.new("Frame"); medBg.Size = UDim2.new(1, -60, 0, 14); medBg.Position = UDim2.fromOffset(30, 34)
+medBg.BackgroundColor3 = Color3.fromRGB(35, 28, 64); medBg.BackgroundTransparency = 0.2; medBg.Parent = medBar
+round(medBg, UDim.new(1, 0)); stroke(medBg, 1.5, Color3.new(1, 1, 1), 0.2)
+local medFill = Instance.new("Frame"); medFill.Size = UDim2.fromScale(0, 1); medFill.BackgroundColor3 = Color3.new(1, 1, 1); medFill.Parent = medBg
+round(medFill, UDim.new(1, 0))
+gradient(medFill, Color3.fromRGB(255, 200, 250), Color3.fromRGB(165, 120, 255), 0)
+
+local function clockText(s)
+	s = math.max(0, math.floor(s))
+	return string.format("%d:%02d", math.floor(s / 60), s % 60)
+end
+
+local function updateMeditation()
+	local med = Config.Meditation
+	local inside = player:GetAttribute("Meditating") == true
+	local prog = player:GetAttribute("MeditationProgress") or 0
+	local cd = player:GetAttribute("MeditationCooldown") or 0
+	local essence = data and data.Essence or 0
+	essRow.Visible = essence > 0 or inside or cd > 0
+	essIcon.Visible = essRow.Visible
+	essText.Text = Config.FormatNumber(essence)
+	essHead.Text = cd > 0 and ("ESENCIA · RECARGA " .. clockText(cd)) or "ESENCIA"
+	medBar.Visible = inside
+	if cd > 0 then
+		medTitle.Text = "Meditación en recarga: " .. clockText(cd)
+		medFill.BackgroundColor3 = Color3.fromRGB(170, 165, 190)
+		medFill.Size = UDim2.fromScale(math.clamp(1 - cd / med.Cooldown, 0, 1), 1)
+	else
+		medTitle.Text = "Meditando: " .. math.floor(prog / med.SecondsPerEssence) .. " / " .. med.Cap .. " Esencia"
+		medFill.BackgroundColor3 = Color3.new(1, 1, 1)
+		medFill.Size = UDim2.fromScale(math.clamp(prog / (med.Cap * med.SecondsPerEssence), 0, 1), 1)
+	end
+end
+for _, attr in ipairs({ "Meditating", "MeditationProgress", "MeditationCooldown" }) do
+	player:GetAttributeChangedSignal(attr):Connect(updateMeditation)
+end
+
 -- notificaciones: píldora de cristal arriba al centro
 local notifyFrame = glass(gui, { Size = UDim2.fromOffset(560, 48), Position = UDim2.new(0.5, -280, 0, 92), Visible = false })
 local notifyLabel = label(notifyFrame, { Text = "", Size = UDim2.new(1, -40, 1, -12), Position = UDim2.fromOffset(20, 6) })
@@ -1062,5 +1109,6 @@ Remotes.DataSync.OnClientEvent:Connect(function(newData)
 	if first then displayed = curAmount(currentWorld()) end
 	updatePets()
 	updateGates()
+	updateMeditation()
 	if panel.Visible then refreshPanel() end
 end)

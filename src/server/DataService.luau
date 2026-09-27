@@ -18,7 +18,8 @@ local function defaultData()
 		Currency = { Nexus = 0 }, -- moneda propia de cada mundo (Nexus = Angel Coins)
 		Pets = {},
 		Unlocked = { Nexus = 1 },
-		Essence = 0,
+		Essence = 0, -- no tradeable (ver Config.Meditation)
+		Meditation = { Progress = 0, Cooldown = 0 }, -- segundos meditados en el ciclo / segundos de recarga restantes
 		WorldsPaid = {}, -- mundos cuyo vehículo ya se pagó con Esencia
 		Pity = {},
 		Rebirths = 0,

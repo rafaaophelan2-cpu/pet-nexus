@@ -440,6 +440,72 @@ task.spawn(function()
 	end
 end)
 
+---------------------------------------------------------------- meditación (Esencia AFK)
+-- Zona = Part con tag "MeditationZone" (volumen invisible). Atributos opcionales Dimension/Zone: área que hay que tener desbloqueada.
+-- El servidor comprueba la posición: dentro se gana 1 Esencia cada SecondsPerEssence hasta el tope del ciclo; al llegar empieza
+-- la recarga, guardada como segundos restantes, así que solo baja mientras el jugador está conectado.
+-- Este bucle es el único que otorga Esencia (no hay remote que la toque, no es tradeable).
+-- El cliente lee el estado de los atributos Meditating / MeditationProgress / MeditationCooldown del jugador.
+local Med = Config.Meditation
+local medZones = {}
+local function addMedZone(p)
+	if p:IsA("BasePart") then medZones[p] = true end
+end
+for _, p in ipairs(CollectionService:GetTagged("MeditationZone")) do addMedZone(p) end
+CollectionService:GetInstanceAddedSignal("MeditationZone"):Connect(addMedZone)
+CollectionService:GetInstanceRemovedSignal("MeditationZone"):Connect(function(p) medZones[p] = nil end)
+
+local function inMeditationZone(player)
+	local hrp = getHRP(player)
+	local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+	if not hrp or not hum or hum.Health <= 0 then return false end
+	for zone in pairs(medZones) do
+		local rel = zone.CFrame:PointToObjectSpace(hrp.Position)
+		local half = zone.Size / 2
+		if math.abs(rel.X) <= half.X and math.abs(rel.Y) <= half.Y and math.abs(rel.Z) <= half.Z then
+			local dim, z = zone:GetAttribute("Dimension"), zone:GetAttribute("Zone")
+			if not dim or not z or canUseZone(player, dim, z) then return true end
+		end
+	end
+	return false
+end
+
+task.spawn(function()
+	local capSeconds = Med.Cap * Med.SecondsPerEssence
+	while true do
+		local dt = math.min(task.wait(1), 3)
+		for _, player in ipairs(Players:GetPlayers()) do
+			local data = DataService.Get(player)
+			if data then
+				local m = data.Meditation
+				local inside = inMeditationZone(player)
+				if m.Cooldown > 0 then
+					m.Cooldown = math.max(0, m.Cooldown - dt)
+					if m.Cooldown == 0 then
+						notify(player, "La Zona de Meditación está lista otra vez", Color3.fromRGB(215, 175, 255))
+					end
+				elseif inside then
+					local before = math.floor(m.Progress / Med.SecondsPerEssence)
+					m.Progress = math.min(capSeconds, m.Progress + dt)
+					local gained = math.floor(m.Progress / Med.SecondsPerEssence) - before
+					if m.Progress >= capSeconds then
+						m.Progress = 0
+						m.Cooldown = Med.Cooldown
+						notify(player, "¡Tope de Esencia! La meditación se recarga en " .. math.floor(Med.Cooldown / 60) .. " min de juego", Color3.fromRGB(215, 175, 255))
+					end
+					if gained > 0 then
+						data.Essence += gained
+						sync(player)
+					end
+				end
+				player:SetAttribute("Meditating", inside)
+				player:SetAttribute("MeditationProgress", math.floor(m.Progress))
+				player:SetAttribute("MeditationCooldown", math.ceil(m.Cooldown))
+			end
+		end
+	end
+end)
+
 ---------------------------------------------------------------- jugadores
 local function onPlayerAdded(player)
 	state[player] = {}
@@ -487,6 +553,9 @@ if RunService:IsStudio() then
 		if not data then return "sin datos" end
 		if cmd == "coins" then data.Currency.Nexus = value
 		elseif cmd == "unlock" then data.Unlocked.Nexus = value
+		elseif cmd == "essence" then data.Essence = value
+		elseif cmd == "medprogress" then data.Meditation.Progress = value -- segundos meditados en el ciclo
+		elseif cmd == "medcooldown" then data.Meditation.Cooldown = value -- segundos de recarga restantes
 		elseif cmd == "teleport" then teleport(player, value)
 		elseif cmd == "get" then return HttpService:JSONEncode(data) end
 		sync(player)
