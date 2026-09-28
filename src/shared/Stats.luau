@@ -3,6 +3,7 @@
 --   final = Base x (1 + mejora) x (1 + encantamientos equipados) x (1 + rebirths) x (1 + rango) x (1 + gamepasses)
 --                x (1 + pociones activas)
 -- Datos que se leen: Pets, Upgrades, RebirthsDone, Rank, Passes, PotionTime.
+-- MaxEquipped y MaxInventory son enteros aparte: base + mejora + rebirths + gamepasses (sin multiplicar).
 local Config = require(script.Parent.Config)
 
 local Stats = {}
@@ -163,6 +164,12 @@ function Stats.MaxEquipped(data)
 		+ Stats.PassBonus(data, "MaxEquipped")
 end
 
+-- Cantidad máxima de mascotas en el inventario (entero): base + mejora InventorySlots + rebirths + gamepasses
+function Stats.MaxInventory(data)
+	return Config.Inventory.BasePets + Stats.UpgradeBonus(data, "MaxInventory") + Stats.RebirthBonus(data, "MaxInventory")
+		+ Stats.PassBonus(data, "MaxInventory")
+end
+
 -- Factores por fuente (para la UI y los tests): cada uno es 1 + la suma de bonus de esa fuente
 function Stats.Breakdown(data, stat, dim)
 	return {
@@ -179,6 +186,7 @@ end
 -- Valor final de una stat. dim solo importa para las mejoras por dimensión (Coins).
 function Stats.Get(data, stat, dim)
 	if stat == "MaxEquipped" then return Stats.MaxEquipped(data) end
+	if stat == "MaxInventory" then return Stats.MaxInventory(data) end
 	assert(Config.StatDefs[stat], "stat desconocida: " .. tostring(stat))
 	local b = Stats.Breakdown(data, stat, dim)
 	return b.Base * b.Upgrade * b.Enchant * b.Rebirth * b.Rank * b.GamePass * b.Potion
@@ -186,8 +194,8 @@ end
 
 -- Todas las stats de un jugador (para debug y para la UI futura). Coins usa la dimensión dada.
 function Stats.Compute(data, dim)
-	local out = { MaxEquipped = Stats.MaxEquipped(data), Power = Stats.Power(data), Rank = Stats.Rank(data),
-		Rebirths = Stats.RebirthCount(data) }
+	local out = { MaxEquipped = Stats.MaxEquipped(data), MaxInventory = Stats.MaxInventory(data), Power = Stats.Power(data),
+		Rank = Stats.Rank(data), Rebirths = Stats.RebirthCount(data) }
 	for stat in pairs(Config.StatDefs) do
 		out[stat] = Stats.Get(data, stat, dim)
 	end

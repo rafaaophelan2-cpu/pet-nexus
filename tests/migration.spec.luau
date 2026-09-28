@@ -121,6 +121,34 @@ H.test("las stats funcionan sobre una partida migrada", function()
 	H.eq(Stats.RankUnlocked(d), true)
 end)
 
+H.test("partida previa al inventario: agrega Items, Teams y saltos de Esencia sin tocar lo demás", function()
+	local d = DataService.Reconcile(saveV2(), OPTS)
+	H.eq(next(d.Items), nil)
+	H.eq(next(d.Teams), nil)
+	H.eq(d.Meditation.SkipCredits, 0)
+	H.eq(d.Meditation.Carry, 0.5, "lo que había se conserva")
+	for _, pet in ipairs(d.Pets) do H.eq(pet.Locked, nil) end
+end)
+
+H.test("limpia el lock guardado, teams rotos, items inválidos y bloqueos basura", function()
+	local s = saveV2()
+	s.SessionLock = { JobId = "x", Session = "y", Time = 1 }
+	s.Pets[1].Locked = true
+	s.Pets[2].Locked = "si"
+	s.Teams = { ["1"] = { Name = "Farm", PetIds = { "a" } }, ["2"] = "basura", ["3"] = { PetIds = { "b" } } }
+	s.Items = { GiftSmall = 2, GiftBig = 0, Raro = "x" }
+	local d = DataService.Reconcile(s, OPTS)
+	H.eq(d.SessionLock, nil, "el lock nunca queda en los datos de la sesión")
+	H.eq(d.Pets[1].Locked, true)
+	H.eq(d.Pets[2].Locked, nil)
+	H.eq(d.Teams["1"].Name, "Farm")
+	H.eq(d.Teams["2"], nil)
+	H.eq(d.Teams["3"].Name, "Equipo 3")
+	H.eq(d.Items.GiftSmall, 2)
+	H.eq(d.Items.GiftBig, nil)
+	H.eq(d.Items.Raro, nil)
+end)
+
 H.test("Default devuelve tablas nuevas cada vez", function()
 	local a, b = DataService.Default(), DataService.Default()
 	a.Pets[1] = {}

@@ -15,7 +15,8 @@ end
 function H.modules()
 	local mods = {}
 	local env = {
-		script = { Parent = { Config = "Config", Stats = "Stats", Economy = "Economy", Progression = "Progression", Purchases = "Purchases" } },
+		script = { Parent = { Config = "Config", Stats = "Stats", Economy = "Economy", Progression = "Progression", Purchases = "Purchases",
+			Inventory = "Inventory", Gifts = "Gifts" } },
 		require = function(key)
 			return assert(mods[key], "módulo no cargado: " .. tostring(key))
 		end,
@@ -28,11 +29,34 @@ function H.modules()
 	mods.Economy = load("src/shared/Economy.luau", env)
 	mods.Progression = load("src/shared/Progression.luau", env)
 	mods.Purchases = load("src/shared/Purchases.luau", env)
-	mods.DataService = load("src/server/DataService.luau", {
-		game = { GetService = function() return { GetDataStore = function() error("sin DataStore en tests") end } end },
-		warn = function() end,
+	mods.Inventory = load("src/shared/Inventory.luau", env)
+	mods.Gifts = load("src/shared/Gifts.luau", env)
+	mods.DataService = H.loadDataService(mods, {
+		DataStoreService = { GetDataStore = function() error("sin DataStore en tests") end },
 	})
 	return mods
+end
+
+-- Carga DataService con servicios falsos. services = { DataStoreService, HttpService? }; extra = variables del entorno
+-- (task, os, warn...) para simular reloj y errores. game.JobId sale de extra.JobId.
+local guid = 0 -- compartido: dos servidores falsos nunca generan el mismo id (como los GUID reales)
+function H.loadDataService(mods, services, extra)
+	extra = extra or {}
+	local all = {
+		ReplicatedStorage = { PetNexus = { Config = "Config" } },
+		HttpService = { GenerateGUID = function() guid += 1 return "sesion-" .. guid end },
+	}
+	for k, v in pairs(services) do all[k] = v end
+	local env = {
+		game = { JobId = extra.JobId, GetService = function(_, name) return assert(all[name], "servicio falso: " .. name) end },
+		require = function(key) return assert(mods[key], "módulo no cargado: " .. tostring(key)) end,
+		warn = extra.warn or function() end,
+		Enum = { DataStoreRequestType = { UpdateAsync = "UpdateAsync" } },
+	}
+	for k, v in pairs(extra) do
+		if k ~= "JobId" then env[k] = v end
+	end
+	return load("src/server/DataService.luau", env)
 end
 
 -- Generador con seed (Park-Miller). Misma interfaz que Random: NextNumber() en [0, 1) o NextNumber(min, max).

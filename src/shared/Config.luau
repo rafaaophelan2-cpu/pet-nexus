@@ -2,7 +2,6 @@
 local Config = {}
 
 Config.MaxEquipped = 3 -- base; suman la mejora PetsEquipped, los rebirths y los gamepasses (ver Stats.MaxEquipped)
-Config.MaxInventory = 60
 Config.HatchCooldown = 0.8 -- segundos entre aperturas de huevo (base; la stat HatchSpeed lo divide)
 Config.BaseWalkSpeed = 16 -- velocidad de caminar base del jugador (la de Roblox por defecto)
 Config.PityThreshold = 40 -- aperturas sin Rare+ antes de garantizar uno
@@ -13,6 +12,8 @@ Config.TeleportCooldown = 3
 Config.RateLimits = {
 	Enchant = 0.3, AutoEnchant = 1, Upgrade = 0.4, Variant = 0.5,
 	Rebirth = 2, Rank = 0.4, Potion = 0.3, FreePotions = 1, Prompt = 1,
+	Equip = 0.1, EquipBest = 1, DeletePets = 0.5, PetLock = 0.1, -- inventario (Equip también cuenta para UnequipPet)
+	Team = 0.5, ApplyTeam = 1, PlaytimeGift = 0.5, OpenGift = 0.25,
 }
 Config.AreasPerWorld = 20
 Config.ShowPlannedMachines = true -- vista previa de íconos de máquinas aún no construidas (apagar antes de publicar)
@@ -104,6 +105,98 @@ Config.Meditation = {
 	Cap = 900,              -- tope de Esencia por ciclo (sin multiplicador): 900 x 1 s = 15 min de meditación
 	Cooldown = 1800,        -- recarga al llegar al tope: 30 min que solo avanzan mientras el jugador está conectado
 	BaseMultiplier = 1,     -- base de la stat Essence (x1); la suben Essence Master y el gamepass Double Essence
+	-- Recorte de la recarga que dará una misión (Economy.ReduceMeditationCooldown). PROVISIONAL: las misiones aún no existen.
+	MissionCooldownCut = 900,
+}
+
+---------------------------------------------------------------- inventario de mascotas
+-- Máximo = BasePets + mejora InventorySlots + gamepasses InventoryPlus250/500 (ver Stats.MaxInventory): 100 a 1000.
+-- Con el inventario lleno no se abren huevos ni se reciben mascotas.
+Config.Inventory = {
+	BasePets = 100,
+	MinPets = 1,         -- PROVISIONAL: el borrado nunca deja menos (sin mascotas no se puede romper nada)
+	AutoEquipNew = true, -- PROVISIONAL: una mascota nueva se equipa sola SOLO si queda un espacio de equipo libre
+}
+
+-- Teams: plantillas de equipo guardadas por el jugador (data.Teams["<slot>"] = { Name, PetIds }), hasta MaxEquipped mascotas.
+Config.Teams = {
+	Max = 5,      -- PROVISIONAL: slots de teams
+	NameMax = 20, -- caracteres del nombre (el servidor además lo filtra con TextService)
+}
+
+---------------------------------------------------------------- items (inventario de objetos especiales)
+-- data.Items[id] = cantidad. Las pociones siguen en su sistema (data.Potions): la UI las muestra en su propia pestaña.
+-- Rarity = clave de Config.Rarities. Type: "Gift" = regalo que se abre (Gift = clave de Config.GiftTables).
+-- Icon = nombre del ícono en PetNexusAssets.Icons. PROVISIONAL: íconos (aún no existen) y rarezas.
+Config.Items = {
+	GiftSmall  = { Order = 1, Name = "Regalo Pequeño", Rarity = "Common",    Type = "Gift", Gift = "Small",  Icon = "GiftSmall" },
+	GiftNormal = { Order = 2, Name = "Regalo Normal",  Rarity = "Uncommon",  Type = "Gift", Gift = "Normal", Icon = "GiftNormal" },
+	GiftBig    = { Order = 3, Name = "Regalo Grande",  Rarity = "Rare",      Type = "Gift", Gift = "Big",    Icon = "GiftBig" },
+	GiftGiant  = { Order = 4, Name = "Regalo Gigante", Rarity = "Legendary", Type = "Gift", Gift = "Giant",  Icon = "GiftGiant" },
+}
+
+---------------------------------------------------------------- regalos por tiempo jugado
+-- Minutes[n] = minutos seguidos jugados en la MISMA sesión para reclamar el regalo n (se reinicia al salir del juego).
+-- Stages: el regalo n da el item de la primera etapa con n <= Last. Al reclamarlo queda como item en data.Items.
+-- PROVISIONAL: horario (uno cada 15 min, 12 en 3 h) y etapas.
+Config.PlaytimeGifts = {
+	Minutes = { 15, 30, 45, 60, 75, 90, 105, 120, 135, 150, 165, 180 },
+	Stages = {
+		{ Last = 4,  Item = "GiftSmall" },
+		{ Last = 8,  Item = "GiftNormal" },
+		{ Last = 11, Item = "GiftBig" },
+		{ Last = 12, Item = "GiftGiant" },
+	},
+}
+
+-- Tablas de premios de los regalos: al abrir se tira Rolls veces; cada tirada elige un premio según Weight (suman 100 = %).
+-- NO usan suerte: ni gamepasses, ni mejoras, ni pociones, ni rebirth (ni en la tirada ni en las cantidades).
+-- Kind: "Coins" = Amount x escala del progreso en el mundo actual (misma curva que CoinPack), en la moneda de ese mundo;
+--       "Diamonds" = Amount exacto; "Potion" = Amount pociones de tipo Potion; "Item" = Amount del item Item.
+-- El cliente puede leerlas para mostrar premios y probabilidades (Gifts.Chances). PROVISIONAL: todo el contenido.
+Config.GiftTables = {
+	Small = { Rolls = 1, Rewards = {
+		{ Kind = "Coins", Amount = 250, Weight = 55 },
+		{ Kind = "Diamonds", Amount = 5, Weight = 30 },
+		{ Kind = "Potion", Potion = "Coins", Amount = 1, Weight = 8 },
+		{ Kind = "Potion", Potion = "Luck", Amount = 1, Weight = 7 },
+	} },
+	Normal = { Rolls = 1, Rewards = {
+		{ Kind = "Coins", Amount = 750, Weight = 50 },
+		{ Kind = "Diamonds", Amount = 15, Weight = 30 },
+		{ Kind = "Potion", Potion = "Coins", Amount = 1, Weight = 10 },
+		{ Kind = "Potion", Potion = "Luck", Amount = 1, Weight = 10 },
+	} },
+	Big = { Rolls = 2, Rewards = {
+		{ Kind = "Coins", Amount = 2000, Weight = 45 },
+		{ Kind = "Diamonds", Amount = 40, Weight = 30 },
+		{ Kind = "Potion", Potion = "Luck", Amount = 1, Weight = 10 },
+		{ Kind = "Potion", Potion = "Diamonds", Amount = 1, Weight = 8 },
+		{ Kind = "Potion", Potion = "HatchSpeed", Amount = 1, Weight = 7 },
+	} },
+	Giant = { Rolls = 3, Rewards = {
+		{ Kind = "Coins", Amount = 5000, Weight = 40 },
+		{ Kind = "Diamonds", Amount = 100, Weight = 30 },
+		{ Kind = "Potion", Potion = "Luck", Amount = 2, Weight = 10 },
+		{ Kind = "Potion", Potion = "Coins", Amount = 2, Weight = 10 },
+		{ Kind = "Potion", Potion = "Diamonds", Amount = 2, Weight = 10 },
+	} },
+}
+
+---------------------------------------------------------------- guardado (DataService)
+-- Bloqueo de sesión: el registro guardado lleva SessionLock = { JobId, Session, Time }. Un servidor solo carga una partida
+-- si nadie más la tiene abierta, y solo guarda si el lock sigue siendo suyo (así nunca se duplican mascotas ni compras).
+-- Cada autoguardado renueva Time. PROVISIONAL: todos los tiempos.
+Config.Save = {
+	AutoSaveInterval = 60, -- segundos entre autoguardados
+	LockExpire = 600,      -- lock sin renovar hace más de esto = servidor caído: se toma sin esperar
+	LockRetryDelay = 4,    -- segundos entre intentos mientras otro servidor tiene la partida abierta
+	LockWaitMax = 40,      -- tras esperar esto, el lock se considera abandonado y se toma (el otro ya no podrá guardar)
+	Retries = 5,           -- intentos por petición ante errores de DataStore
+	RetryBase = 1,         -- espera tras el primer error; se duplica en cada intento (1, 2, 4, 8...)
+	RetryMax = 16,         -- espera máxima entre intentos
+	BudgetWait = 20,       -- segundos máximos esperando presupuesto de peticiones de DataStore antes de intentar igual
+	CloseTimeout = 25,     -- BindToClose: segundos máximos esperando los guardados (Roblox corta a los 30)
 }
 
 ---------------------------------------------------------------- stats (cálculo en Stats.luau)
@@ -193,8 +286,9 @@ function Config.EnchantLabel(id, level)
 end
 
 ---------------------------------------------------------------- mejoras (máquina de mejoras)
--- Levels[n].Bonus = bonus TOTAL con el nivel n (no se suman entre niveles). Stat = clave de StatDefs, o "MaxEquipped"
--- (Bonus = mascotas extra). Unlock = true: la mejora solo desbloquea algo (AutoEnchant: nivel 1 = desbloqueado).
+-- Levels[n].Bonus = bonus TOTAL con el nivel n (no se suman entre niveles). Stat = clave de StatDefs, "MaxEquipped"
+-- (Bonus = mascotas extra) o "MaxInventory" (Bonus = espacios extra de inventario).
+-- Unlock = true: la mejora solo desbloquea algo (AutoEnchant: nivel 1 = desbloqueado).
 -- PerDimension = se compra y aplica por mundo (Coins de Nexus solo afecta a Angel Coins): se paga en la moneda de ese mundo
 -- y el precio se escala con Config.UpgradePriceScale(dim). Las globales se compran en la máquina del mundo Dimension;
 -- sin Dimension = el mundo inicial (Config.SpawnWorld(): hoy Nexus, Greenwood cuando esté construido).
@@ -218,6 +312,10 @@ Config.Upgrades = {
 	} },
 	AutoEnchant = { Order = 6, Name = "Auto Enchant", Unlock = true, Currency = "Diamonds", Levels = {
 		{ Price = 1000 },
+	} },
+	-- Inventario total 120 / 150 / 200 / 250 (base 100). PROVISIONAL: precios (misma escala que Coins).
+	InventorySlots = { Order = 7, Name = "Espacio de inventario", Stat = "MaxInventory", Currency = "Dimension", Levels = {
+		{ Bonus = 20, Price = 1000 }, { Bonus = 50, Price = 10000 }, { Bonus = 100, Price = 100000 }, { Bonus = 150, Price = 1000000 },
 	} },
 }
 
@@ -249,7 +347,7 @@ Config.Ranks = {
 
 ---------------------------------------------------------------- gamepasses
 -- Id = 0: desactivado (nadie lo tiene). Poner el Id real del Creator Dashboard. Price es informativo (Robux).
--- Bonus: por stat (se suma con los otros gamepasses) y MaxEquipped = mascotas extra.
+-- Bonus: por stat (se suma con los otros gamepasses), MaxEquipped = mascotas extra y MaxInventory = espacios de inventario extra.
 -- VipAccess: entra a la zona VIP (Parts "VipBarrier" sin colisión para el dueño; región "VipZone" saca a los demás).
 -- KeepOnRebirth: el rebirth da los beneficios sin reiniciar nada.
 Config.GamePasses = {
@@ -263,6 +361,8 @@ Config.GamePasses = {
 	DeluxePetEquip  = { Id = 0, Price = 799, Name = "Deluxe Pet Equip",  Bonus = { MaxEquipped = 4 } },
 	DoubleEssence   = { Id = 0, Price = 199, Name = "Double Essence",    Bonus = { Essence = 1 } },
 	DoubleXP        = { Id = 0, Price = 149, Name = "Double XP",         Bonus = { XP = 1 } },
+	InventoryPlus250 = { Id = 0, Price = 199, Name = "Inventory +250",   Bonus = { MaxInventory = 250 } },
+	InventoryPlus500 = { Id = 0, Price = 249, Name = "Inventory +500",   Bonus = { MaxInventory = 500 } },
 }
 
 ---------------------------------------------------------------- pociones
@@ -290,7 +390,9 @@ Config.FreePotions = { Amount = 1, Cooldown = 3 * 3600, SkipsPerDay = 3, Range =
 --   CoinPack       Amount x escala del progreso en el mundo actual (Config.PackScale), en la moneda de ese mundo
 --   DiamondPack    Amount x escala del progreso (lineal, más suave)
 --   FreePotionSkip reinicia el cooldown de las pociones gratis (máx. FreePotions.SkipsPerDay por día)
--- PROVISIONAL: precios y cantidades de los paquetes de monedas y diamantes.
+--   EssenceSkip    termina la recarga de la Zona de Meditación (solo se ofrece durante la recarga; si al entregarse ya
+--                  terminó, queda como salto guardado que se usa solo en la próxima recarga)
+-- PROVISIONAL: precios y cantidades de los paquetes de monedas y diamantes, y el precio de EssenceCooldownSkip.
 Config.Products = {
 	Potion_Luck_1 = { Id = 0, Price = 9,  Kind = "Potions", Potions = { Luck = 1 } },
 	Potion_Luck_3 = { Id = 0, Price = 24, Kind = "Potions", Potions = { Luck = 3 } },
@@ -331,6 +433,7 @@ Config.Products = {
 	DiamondPack4 = { Id = 0, Price = 249, Kind = "DiamondPack", Amount = 1800 },
 	DiamondPack5 = { Id = 0, Price = 499, Kind = "DiamondPack", Amount = 4500 },
 	FreePotionSkip = { Id = 0, Price = 19, Kind = "FreePotionSkip" },
+	EssenceCooldownSkip = { Id = 0, Price = 25, Kind = "EssenceSkip" },
 }
 
 -- Escala de los paquetes según el área más alta desbloqueada del mundo actual (area >= 1).

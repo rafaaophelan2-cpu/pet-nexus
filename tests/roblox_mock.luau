@@ -235,6 +235,9 @@ end
 function methods:FireAllClients(...) end
 function methods:Invoke(...) return rawget(self, "_p").OnInvoke(...) end
 function methods:InputHoldBegin() end
+function methods:Kick(message)
+	Mock.kicked[self] = message or ""
+end
 
 Mock.Instance = { new = function(cn, parent)
 	local i = newInstance(cn)
@@ -242,6 +245,7 @@ Mock.Instance = { new = function(cn, parent)
 	return i
 end }
 Mock.sent = {}
+Mock.kicked = {}
 
 -- Eventos enviados a un jugador con ese nombre de remote
 function Mock.events(player, remoteName)
@@ -303,8 +307,9 @@ function Mock.build()
 	function HttpService:JSONEncode(v) return serde.encode("json", v) end
 	services.HttpService = HttpService
 
-	-- DataStore en memoria (Mock.store.fail = true simula errores)
-	local store = { saved = {}, fail = false, saves = 0 }
+	-- DataStore en memoria (Mock.store.fail = true simula errores; budget = presupuesto de peticiones).
+	-- Como en Roblox, si el transform de UpdateAsync devuelve nil no se escribe nada.
+	local store = { saved = {}, fail = false, saves = 0, budget = 100 }
 	local function copy(v) return v and serde.decode("json", serde.encode("json", v)) or nil end
 	function store:GetAsync(key)
 		if self.fail then error("DataStore caído") end
@@ -312,13 +317,25 @@ function Mock.build()
 	end
 	function store:UpdateAsync(key, fn)
 		if self.fail then error("DataStore caído") end
-		self.saved[key] = copy(fn(copy(self.saved[key])))
+		local result = fn(copy(self.saved[key]))
+		if result == nil then return nil end
+		self.saved[key] = copy(result)
 		self.saves += 1
+		return copy(result)
 	end
 	Mock.store = store
 	local DataStoreService = newInstance("DataStoreService")
 	function DataStoreService:GetDataStore() return store end
+	function DataStoreService:GetRequestBudgetForRequestType() return store.budget end
 	services.DataStoreService = DataStoreService
+
+	-- Filtro de texto: Mock.textFilter(texto) decide el resultado (por defecto no cambia nada)
+	local TextService = newInstance("TextService")
+	function TextService:FilterStringAsync(text)
+		local out = Mock.textFilter and Mock.textFilter(text) or text
+		return { GetNonChatStringForUserAsync = function() return out end }
+	end
+	services.TextService = TextService
 
 	local market = { owned = {}, prompts = {} }
 	local MarketplaceService = newInstance("MarketplaceService")
@@ -331,7 +348,7 @@ function Mock.build()
 
 	local ReplicatedStorage = newInstance("ReplicatedStorage")
 	local petNexus = folder("PetNexus", ReplicatedStorage)
-	for _, n in ipairs({ "Config", "Icons", "Stats", "Economy", "Progression", "Purchases" }) do
+	for _, n in ipairs({ "Config", "Icons", "Stats", "Economy", "Progression", "Purchases", "Inventory", "Gifts" }) do
 		local ms = newInstance("ModuleScript", n)
 		ms.Parent = petNexus
 	end
@@ -362,8 +379,13 @@ function Mock.build()
 
 	local closeFns = {}
 	local game = newInstance("DataModel")
+	rawget(game, "_p").JobId = "mock-servidor"
 	function game:GetService(name) return assert(services[name], "servicio no simulado: " .. name) end
 	function game:BindToClose(fn) table.insert(closeFns, fn) end
+	-- Simula el cierre del servidor: corre las funciones de BindToClose (cada una en su hilo, como Roblox)
+	function Mock.close()
+		for _, fn in ipairs(closeFns) do task.spawn(fn) end
+	end
 	Mock.services = services
 	Mock.workspace = workspace
 	Mock.game = game
@@ -419,6 +441,8 @@ function Mock.startServer(configure)
 	load("src/shared/Economy.luau", "Economy")
 	load("src/shared/Progression.luau", "Progression")
 	load("src/shared/Purchases.luau", "Purchases")
+	load("src/shared/Inventory.luau", "Inventory")
+	load("src/shared/Gifts.luau", "Gifts")
 	load("src/server/DataService.luau", "DataService")
 	Mock.modules = modules
 	local server = luau.load(fs.readFile("src/server/PetNexusServer.server.luau"), { debugName = "PetNexusServer", environment = env })

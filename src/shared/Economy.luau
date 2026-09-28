@@ -116,6 +116,16 @@ function Economy.GrantEssence(data, ticks, mult)
 	return whole
 end
 
+-- Recorta la recarga de la Zona de Meditación en 'seconds' (math.huge = la termina). Devuelve los segundos recortados.
+-- La usan el Developer Product EssenceCooldownSkip y, más adelante, las misiones (Config.Meditation.MissionCooldownCut).
+function Economy.ReduceMeditationCooldown(data, seconds)
+	local m = data.Meditation
+	local before = math.max(0, m.Cooldown or 0)
+	if type(seconds) ~= "number" or seconds <= 0 or before == 0 then return 0 end
+	m.Cooldown = math.max(0, before - seconds)
+	return before - m.Cooldown
+end
+
 ---------------------------------------------------------------- encantamientos
 local function levelWeights(def)
 	local src = def.LevelWeights or Config.EnchantLevelWeights

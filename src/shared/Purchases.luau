@@ -4,6 +4,7 @@
 local Config = require(script.Parent.Config)
 local Stats = require(script.Parent.Stats)
 local Progression = require(script.Parent.Progression)
+local Economy = require(script.Parent.Economy)
 
 local Purchases = {}
 
@@ -126,7 +127,8 @@ function Purchases.PackAmount(key, data, dim)
 end
 
 -- ¿Se puede ofrecer este producto ahora? (el servidor lo revisa antes de abrir la compra)
--- ctx = { Dim = mundo actual, Now = os.time() }. Errores: product, unavailable, locked, rank (no es el siguiente), ready, limit
+-- ctx = { Dim = mundo actual, Now = os.time() }.
+-- Errores: product, unavailable, locked, rank (no es el siguiente), ready, limit, nocooldown (la meditación no se recarga)
 function Purchases.CanOffer(data, key, ctx)
 	local def = Config.Products[key]
 	if not def then return false, "product" end
@@ -136,6 +138,8 @@ function Purchases.CanOffer(data, key, ctx)
 		if def.Rank ~= Stats.Rank(data) + 1 then return false, "rank" end
 	elseif def.Kind == "FreePotionSkip" then
 		return Purchases.CanSkipFreePotions(data, ctx.Now)
+	elseif def.Kind == "EssenceSkip" then
+		if (data.Meditation.Cooldown or 0) <= 0 then return false, "nocooldown" end
 	elseif def.Kind == "CoinPack" then
 		if not Config.Dimensions[ctx.Dim] or (data.Unlocked[ctx.Dim] or 0) < 1 then return false, "locked" end
 	end
@@ -162,6 +166,13 @@ function Purchases.Grant(data, key, ctx)
 	elseif def.Kind == "FreePotionSkip" then
 		Purchases.ApplyFreePotionSkip(data, ctx.Now)
 		return { Kind = def.Kind }
+	elseif def.Kind == "EssenceSkip" then
+		-- si la recarga ya terminó mientras se compraba, el salto queda guardado para la próxima (no se pierde)
+		if Economy.ReduceMeditationCooldown(data, math.huge) > 0 then
+			return { Kind = def.Kind, Result = "skipped" }
+		end
+		data.Meditation.SkipCredits = (data.Meditation.SkipCredits or 0) + 1
+		return { Kind = def.Kind, Result = "credit" }
 	end
 	error("producto sin entrega: " .. tostring(key))
 end

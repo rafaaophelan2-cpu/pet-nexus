@@ -76,7 +76,8 @@ H.describe("Recibos y productos")
 
 local function withIds(M2)
 	local id = 1000
-	for _, key in ipairs({ "Potion_Luck_3", "PotionBundle_10", "RankSkip1", "RankSkip2", "CoinPack3", "DiamondPack1", "FreePotionSkip" }) do
+	for _, key in ipairs({ "Potion_Luck_3", "PotionBundle_10", "RankSkip1", "RankSkip2", "CoinPack3", "DiamondPack1", "FreePotionSkip",
+		"EssenceCooldownSkip" }) do
 		id += 1
 		M2.Config.Products[key].Id = id
 	end
@@ -163,20 +164,55 @@ H.test("recibo de salto de pociones reinicia el cooldown", function()
 	H.eq(M2.Purchases.FreePotionSkipsToday(d, T0 + 5), 1)
 end)
 
+H.test("salto de recarga de Esencia: solo durante la recarga; si ya terminó queda guardado", function()
+	local M2 = H.modules()
+	withIds(M2)
+	local P = M2.Purchases
+	local d = H.data(M2)
+	local ctx = { Dim = "Nexus", Now = T0 }
+	H.eq(select(2, P.CanOffer(d, "EssenceCooldownSkip", ctx)), "nocooldown")
+	d.Meditation.Cooldown = 1200
+	H.eq(P.CanOffer(d, "EssenceCooldownSkip", ctx), true)
+	local id = M2.Config.Products.EssenceCooldownSkip.Id
+	local status, key, info = P.ProcessReceipt(d, { ProductId = id, PurchaseId = "e-1" }, ctx)
+	H.eq(status, "granted"); H.eq(key, "EssenceCooldownSkip")
+	H.eq(info.Result, "skipped")
+	H.eq(d.Meditation.Cooldown, 0)
+	H.eq(d.Meditation.SkipCredits, 0)
+	-- la recarga terminó entre el aviso y la compra: el salto no se pierde
+	status, key, info = P.ProcessReceipt(d, { ProductId = id, PurchaseId = "e-2" }, ctx)
+	H.eq(info.Result, "credit")
+	H.eq(d.Meditation.SkipCredits, 1)
+	H.eq((P.ProcessReceipt(d, { ProductId = id, PurchaseId = "e-2" }, ctx)), "duplicate")
+	H.eq(d.Meditation.SkipCredits, 1)
+end)
+
+H.test("hook de misión: recorta la recarga sin pasarse de 0", function()
+	local d = H.data(M)
+	local Economy = M.Economy
+	H.eq(Economy.ReduceMeditationCooldown(d, 900), 0, "sin recarga no recorta nada")
+	d.Meditation.Cooldown = 1800
+	H.eq(Economy.ReduceMeditationCooldown(d, Config.Meditation.MissionCooldownCut), 900)
+	H.eq(d.Meditation.Cooldown, 900)
+	H.eq(Economy.ReduceMeditationCooldown(d, 5000), 900)
+	H.eq(d.Meditation.Cooldown, 0)
+	H.eq(Economy.ReduceMeditationCooldown(d, -5), 0)
+end)
+
 H.test("todos los productos y gamepasses empiezan desactivados (Id = 0) y tienen entrega", function()
 	local n = 0
 	for key, def in pairs(Config.Products) do
 		n += 1
 		H.eq(def.Id, 0, key)
-		H.ok(({ Potions = true, RankSkip = true, CoinPack = true, DiamondPack = true, FreePotionSkip = true })[def.Kind], key)
+		H.ok(({ Potions = true, RankSkip = true, CoinPack = true, DiamondPack = true, FreePotionSkip = true, EssenceSkip = true })[def.Kind], key)
 	end
-	H.eq(n, 39)
+	H.eq(n, 40)
 	local p = 0
 	for key, def in pairs(Config.GamePasses) do
 		p += 1
 		H.eq(def.Id, 0, key)
 	end
-	H.eq(p, 10)
+	H.eq(p, 12)
 	H.eq(Purchases.ProductKeyById(0), nil)
 end)
 

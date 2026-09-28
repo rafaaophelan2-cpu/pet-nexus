@@ -6,12 +6,15 @@ local CollectionService = game:GetService("CollectionService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
 local MarketplaceService = game:GetService("MarketplaceService")
+local TextService = game:GetService("TextService")
 
 local Config = require(ReplicatedStorage.PetNexus.Config)
 local Stats = require(ReplicatedStorage.PetNexus.Stats)
 local Economy = require(ReplicatedStorage.PetNexus.Economy)
 local Progression = require(ReplicatedStorage.PetNexus.Progression)
 local Purchases = require(ReplicatedStorage.PetNexus.Purchases)
+local Inventory = require(ReplicatedStorage.PetNexus.Inventory)
+local Gifts = require(ReplicatedStorage.PetNexus.Gifts)
 local DataService = require(ServerScriptService.DataService)
 local Remotes = ReplicatedStorage.PetNexus.Remotes
 
@@ -30,7 +33,7 @@ end
 local PetLevelUpRemote = remote("PetLevelUp")
 
 local rng = Random.new()
-local state = {} -- [player] = { Target, LastHatch, LastTeleport, LastPos, GraceUntil, Ascending, Last<remote> }
+local state = {} -- [player] = { Target, LastHatch, LastTeleport, LastPos, GraceUntil, Ascending, Playtime, Last<remote> }
 local breakables = {} -- [uid] = {...}
 local breakableFolder = workspace:WaitForChild("Breakables")
 local world = workspace:WaitForChild("World")
@@ -56,18 +59,17 @@ local function getCur(data, dim) return data.Currency[dim] or 0 end
 local function addCur(data, dim, amount) data.Currency[dim] = (data.Currency[dim] or 0) + amount end
 local function curName(dim) return Config.CurrencyOf(dim).Name end
 
--- Stats, poder y equipamiento: ver Stats.luau / Economy.luau (poder real con variante, máximo según mejoras)
-local equipBest = Economy.EquipBest
-
+-- Stats, poder y equipamiento: ver Stats.luau / Economy.luau / Inventory.luau. El jugador controla su equipo:
+-- el servidor solo desequipa si hay más equipadas que MaxEquipped (Inventory.ClampEquipped).
 local function getPower(player)
 	local data = DataService.Get(player)
 	if not data then return 0 end
 	return Stats.Power(data)
 end
 
+-- Única forma de dar una mascota (respeta el límite de inventario). Devuelve ok, mascota o código de error.
 local function addPet(data, name)
-	table.insert(data.Pets, Economy.NewPet(HttpService:GenerateGUID(false), name))
-	equipBest(data)
+	return Inventory.AddPet(data, HttpService:GenerateGUID(false), name)
 end
 
 -- Velocidad de caminar = stat WalkSpeed (base + mejora)
@@ -238,10 +240,9 @@ local function breakIt(b)
 			addCur(data, b.Dim, reward)
 			local diamonds = Economy.RollDiamondDrop(rng, b.Kind)
 			if diamonds > 0 then diamonds = Economy.AddDiamonds(data, diamonds) end
-			-- XP fija para cada mascota equipada; si alguna sube de nivel puede cambiar cuáles conviene equipar
+			-- XP fija para cada mascota equipada (el equipo no cambia solo: lo decide el jugador)
 			local _, leveled = Progression.GrantBreakXP(data, b.Kind)
 			if #leveled > 0 then
-				equipBest(data)
 				PetLevelUpRemote:FireClient(player, leveled)
 			end
 			-- 5º argumento: diamantes ganados (0 si no salieron) para la UI futura
@@ -352,8 +353,9 @@ local function hookEgg(eggPart)
 		if not canUseZone(player, egg.Dimension, egg.Zone) then
 			return notify(player, "Desbloquea " .. Config.AreaName(egg.Dimension, egg.Zone) .. " primero", Color3.fromRGB(255, 120, 120))
 		end
-		if #data.Pets >= Config.MaxInventory then
-			return notify(player, "¡Inventario lleno!", Color3.fromRGB(255, 120, 120))
+		if Inventory.IsFull(data) then
+			return notify(player, "Inventario lleno (" .. #data.Pets .. "/" .. Inventory.MaxPets(data)
+				.. "): borra mascotas o amplía el inventario", Color3.fromRGB(255, 120, 120))
 		end
 		if getCur(data, egg.Dimension) < egg.Price then
 			return notify(player, "Te faltan " .. Config.FormatNumber(egg.Price - getCur(data, egg.Dimension)) .. " " .. curName(egg.Dimension), Color3.fromRGB(255, 200, 90))
@@ -560,6 +562,21 @@ local function essenceMultiplier(player, data)
 	return Stats.Get(data, "Essence")
 end
 
+-- Recorta la recarga de la meditación y avisa. Hook para las misiones (aún no existen): una misión cumplida llamará
+-- cutMeditationCooldown(player, Config.Meditation.MissionCooldownCut). Devuelve los segundos recortados.
+local function cutMeditationCooldown(player, seconds)
+	local data = DataService.Get(player)
+	if not data then return 0 end
+	local cut = Economy.ReduceMeditationCooldown(data, seconds)
+	if cut > 0 then
+		player:SetAttribute("MeditationCooldown", math.ceil(data.Meditation.Cooldown))
+		if data.Meditation.Cooldown <= 0 then
+			notify(player, "La Zona de Meditación está lista otra vez", Color3.fromRGB(215, 175, 255))
+		end
+	end
+	return cut
+end
+
 task.spawn(function()
 	local capSeconds = Med.Cap * Med.SecondsPerEssence
 	while true do
@@ -581,8 +598,14 @@ task.spawn(function()
 					local gained = math.floor(m.Progress / Med.SecondsPerEssence) - before
 					if m.Progress >= capSeconds then
 						m.Progress = 0
-						m.Cooldown = Med.Cooldown
-						notify(player, "¡Tope de Esencia! La meditación se recarga en " .. math.floor(Med.Cooldown / 60) .. " min de juego", Color3.fromRGB(215, 175, 255))
+						if (m.SkipCredits or 0) > 0 then
+							-- salto de recarga comprado cuando no había recarga: se usa ahora
+							m.SkipCredits -= 1
+							notify(player, "¡Tope de Esencia! Usaste tu salto de recarga: la meditación sigue lista", Color3.fromRGB(215, 175, 255))
+						else
+							m.Cooldown = Med.Cooldown
+							notify(player, "¡Tope de Esencia! La meditación se recarga en " .. math.floor(Med.Cooldown / 60) .. " min de juego", Color3.fromRGB(215, 175, 255))
+						end
 					end
 					if gained > 0 and Economy.GrantEssence(data, gained, mult) > 0 then
 						sync(player)
@@ -763,7 +786,7 @@ BuyUpgradeRemote.OnServerEvent:Connect(function(player, upgradeId, level, dim)
 		return
 	end
 	local def = Config.Upgrades[upgradeId]
-	equipBest(data) -- PetsEquipped cambia cuántas se equipan
+	Inventory.ClampEquipped(data)
 	applyWalkSpeed(player)
 	UpgradeResultRemote:FireClient(player, upgradeId, level, def.PerDimension and dim or nil)
 	notify(player, "Mejora comprada: " .. (def.Name or upgradeId) .. " nivel " .. level, Color3.fromRGB(150, 235, 160))
@@ -793,7 +816,7 @@ ConvertVariantRemote.OnServerEvent:Connect(function(player, petIds, variant, dim
 		if VARIANT_ERR[res] then notify(player, VARIANT_ERR[res], RED) end
 		return
 	end
-	equipBest(data)
+	Inventory.PruneTeams(data) -- las mascotas consumidas salen de los teams
 	VariantResultRemote:FireClient(player, res.Id, variant)
 	notify(player, Config.PetName(res.Name) .. " ahora es " .. variant, Color3.fromRGB(255, 225, 120))
 	sync(player)
@@ -865,7 +888,7 @@ RebirthRemote.OnServerEvent:Connect(function(player, dim)
 	-- ventana de gracia: el cliente hace volar al personaje y sus áreas se acaban de reiniciar
 	st.GraceUntil = os.clock() + Config.RebirthGrace
 	st.Ascending = true
-	equipBest(data) -- el rebirth puede dar mascotas equipadas extra
+	Inventory.ClampEquipped(data)
 	RebirthResultRemote:FireClient(player, dim, info)
 	sync(player)
 	task.spawn(DataService.Save, player)
@@ -957,7 +980,7 @@ for key, def in pairs(Config.GamePasses) do
 end
 
 local function afterStatsChange(player, data)
-	equipBest(data)
+	Inventory.ClampEquipped(data) -- si se perdió un gamepass de mascotas equipadas
 	applyWalkSpeed(player)
 	sync(player)
 end
@@ -1005,6 +1028,7 @@ local PROMPT_ERR = {
 	rank = "Ese no es tu siguiente rango",
 	ready = "Ya puedes reclamar tus pociones gratis",
 	limit = "Ya usaste los saltos de hoy",
+	nocooldown = "La Zona de Meditación no se está recargando",
 }
 
 local function purchaseContext(player, data)
@@ -1049,6 +1073,10 @@ MarketplaceService.ProcessReceipt = function(receipt)
 			notify(player, "Rango " .. info.Rank .. " desbloqueado", GREEN)
 		elseif info.Kind == "RankSkip" then
 			notify(player, "Recibiste " .. Config.FormatNumber(info.Diamonds) .. " Diamantes", GREEN)
+		elseif info.Kind == "EssenceSkip" then
+			player:SetAttribute("MeditationCooldown", math.ceil(data.Meditation.Cooldown))
+			notify(player, info.Result == "skipped" and "La Zona de Meditación está lista otra vez"
+				or "Salto de recarga guardado: se usará en tu próxima recarga", GREEN)
 		else
 			notify(player, "Compra entregada", GREEN)
 		end
@@ -1060,6 +1088,279 @@ MarketplaceService.ProcessReceipt = function(receipt)
 	return Enum.ProductPurchaseDecision.NotProcessedYet
 end
 
+---------------------------------------------------------------- inventario, teams, items y regalos (solo lógica)
+-- La UI (pestañas Pets / Items / Potions / Teams) se arma en Studio: el cliente puede usar Inventory.View(data) y
+-- Gifts.Chances(itemId, data, dim) con los datos de DataSync. Los errores llegan como Notify.
+-- Cliente -> servidor:
+--   EquipPet(petId) / UnequipPet(petId)
+--   EquipBest()
+--   DeletePets({ petIds })              borrado en bulk: salta las bloqueadas y nunca deja menos de Config.Inventory.MinPets
+--   SetPetLocked(petId, locked)         locked = true | false (una bloqueada no se puede borrar)
+--   SaveTeam(slot, name, petIds)        petIds = nil: guarda el equipo actual; name = nil: conserva el nombre del slot
+--   ApplyTeam(slot)                     equipa ese team (omite y avisa las mascotas que ya no existen)
+--   RenameTeam(slot, name) / DeleteTeam(slot)
+--   ClaimPlaytimeGift(n)                n = 1..12, cuando se cumplió su tiempo en esta sesión; queda como item
+--   OpenGift(itemId)                    abre un regalo del inventario (Config.Items con Type = "Gift")
+--   Salto de la recarga de la meditación: PromptProduct("EssenceCooldownSkip")
+-- Servidor -> cliente:
+--   InventoryResult(action, info)       action = "equip" | "unequip" | "equipbest" | "delete" | "lock"
+--                                        delete: info = { Deleted = {ids}, Locked = n, Missing = n }
+--   TeamResult(action, slot, info)      action = "save" | "apply" | "rename" | "delete"
+--                                        apply: info = { Equipped, Missing, Skipped }
+--   PlaytimeGiftClaimed(n, itemId)
+--   GiftOpened(itemId, rewards)         rewards = { { Kind, Amount, Dim?, Potion?, Item? }, ... }
+-- Atributos del jugador: PlaytimeSeconds (segundos jugados en la sesión, cada 1 s) y PlaytimeGiftsClaimed ("1,2,5");
+-- el cliente arma el estado de los regalos con Gifts.StatusFrom(segundos, Gifts.ParseClaimed(texto)).
+local EquipPetRemote = remote("EquipPet")
+local UnequipPetRemote = remote("UnequipPet")
+local EquipBestRemote = remote("EquipBest")
+local DeletePetsRemote = remote("DeletePets")
+local SetPetLockedRemote = remote("SetPetLocked")
+local SaveTeamRemote = remote("SaveTeam")
+local ApplyTeamRemote = remote("ApplyTeam")
+local RenameTeamRemote = remote("RenameTeam")
+local DeleteTeamRemote = remote("DeleteTeam")
+local ClaimPlaytimeGiftRemote = remote("ClaimPlaytimeGift")
+local OpenGiftRemote = remote("OpenGift")
+local InventoryResultRemote = remote("InventoryResult")
+local TeamResultRemote = remote("TeamResult")
+local PlaytimeGiftClaimedRemote = remote("PlaytimeGiftClaimed")
+local GiftOpenedRemote = remote("GiftOpened")
+
+local function plural(n, one, many)
+	return n .. " " .. (n == 1 and one or many)
+end
+
+-- Mascotas
+local PET_ERR = {
+	pet = "Esa mascota no existe",
+	equipped = "Esa mascota ya está equipada",
+	unequipped = "Esa mascota no está equipada",
+}
+
+EquipPetRemote.OnServerEvent:Connect(function(player, petId)
+	local st, data = state[player], DataService.Get(player)
+	if not st or not data or not validPetId(petId) then return end
+	if rateLimited(st, "LastEquip", Config.RateLimits.Equip) then return end
+	local ok, err, extra = Inventory.Equip(data, petId)
+	if not ok then
+		if err == "slots" then return notify(player, "Ya tienes " .. extra .. "/" .. extra .. " mascotas equipadas", GOLD) end
+		return notify(player, PET_ERR[err] or "No se pudo equipar", RED)
+	end
+	InventoryResultRemote:FireClient(player, "equip", { PetId = petId })
+	sync(player)
+end)
+
+UnequipPetRemote.OnServerEvent:Connect(function(player, petId)
+	local st, data = state[player], DataService.Get(player)
+	if not st or not data or not validPetId(petId) then return end
+	if rateLimited(st, "LastEquip", Config.RateLimits.Equip) then return end
+	local ok, err = Inventory.Unequip(data, petId)
+	if not ok then return notify(player, PET_ERR[err] or "No se pudo desequipar", RED) end
+	InventoryResultRemote:FireClient(player, "unequip", { PetId = petId })
+	sync(player)
+end)
+
+EquipBestRemote.OnServerEvent:Connect(function(player)
+	local st, data = state[player], DataService.Get(player)
+	if not st or not data then return end
+	if rateLimited(st, "LastEquipBest", Config.RateLimits.EquipBest) then return end
+	local n = Inventory.EquipBest(data)
+	InventoryResultRemote:FireClient(player, "equipbest", { Equipped = n })
+	sync(player)
+end)
+
+DeletePetsRemote.OnServerEvent:Connect(function(player, petIds)
+	local st, data = state[player], DataService.Get(player)
+	if not st or not data or typeof(petIds) ~= "table" then return end
+	if rateLimited(st, "LastDeletePets", Config.RateLimits.DeletePets) then return end
+	local ok, res, extra = Inventory.DeletePets(data, petIds)
+	if not ok then
+		if res == "min" then return notify(player, "Tienes que conservar al menos " .. plural(extra, "mascota", "mascotas"), RED) end
+		if res == "none" and extra.Locked > 0 then return notify(player, "Las mascotas bloqueadas no se pueden borrar", GOLD) end
+		if res == "none" then return notify(player, "Esas mascotas no existen", RED) end
+		return
+	end
+	-- un auto enchant sobre una mascota borrada se detiene solo (pet_missing)
+	local text = "Borraste " .. plural(#res.Deleted, "mascota", "mascotas")
+	if res.Locked > 0 then text ..= " (" .. plural(res.Locked, "bloqueada no se borró", "bloqueadas no se borraron") .. ")" end
+	notify(player, text, GREEN)
+	InventoryResultRemote:FireClient(player, "delete", res)
+	sync(player)
+end)
+
+SetPetLockedRemote.OnServerEvent:Connect(function(player, petId, locked)
+	local st, data = state[player], DataService.Get(player)
+	if not st or not data or not validPetId(petId) or typeof(locked) ~= "boolean" then return end
+	if rateLimited(st, "LastPetLock", Config.RateLimits.PetLock) then return end
+	local ok, err = Inventory.SetLocked(data, petId, locked)
+	if not ok then return notify(player, PET_ERR[err] or "No se pudo bloquear", RED) end
+	InventoryResultRemote:FireClient(player, "lock", { PetId = petId, Locked = locked })
+	sync(player)
+end)
+
+-- Teams
+local TEAM_ERR = {
+	slot = "Ese slot de equipo no existe",
+	name = "Nombre inválido: de 1 a " .. Config.Teams.NameMax .. " caracteres",
+	filter = "No se pudo revisar el nombre, intenta de nuevo",
+	pets = "Lista de mascotas inválida",
+	pet = "Alguna de esas mascotas no existe",
+	empty = "Ese equipo está vacío",
+}
+
+local function teamError(player, err, extra)
+	if err == "size" then return notify(player, "Un equipo puede tener hasta " .. plural(extra, "mascota", "mascotas"), RED) end
+	if err == "missing" then return notify(player, "Las mascotas de ese equipo ya no existen", RED) end
+	notify(player, TEAM_ERR[err] or "No se pudo guardar el equipo", RED)
+end
+
+-- Filtra un texto escrito por el jugador con el filtro de Roblox (solo lo ve él). nil si el filtro falló.
+local function filterText(player, text)
+	local ok, result = pcall(function()
+		return TextService:FilterStringAsync(text, player.UserId):GetNonChatStringForUserAsync(player.UserId)
+	end)
+	if not ok or typeof(result) ~= "string" then return nil end
+	return result
+end
+
+-- Limpia y filtra el nombre de un team (nil = sin nombre). Devuelve ok, nombre o código de error.
+local function teamName(player, name)
+	if name == nil then return true, nil end
+	local clean = Inventory.CleanTeamName(name)
+	if not clean then return false, "name" end
+	local filtered = filterText(player, clean)
+	if not filtered then return false, "filter" end
+	return true, filtered
+end
+
+SaveTeamRemote.OnServerEvent:Connect(function(player, slot, name, petIds)
+	local st, data = state[player], DataService.Get(player)
+	if not st or not data or typeof(slot) ~= "number" then return end
+	if (name ~= nil and typeof(name) ~= "string") or (petIds ~= nil and typeof(petIds) ~= "table") then return end
+	if rateLimited(st, "LastTeam", Config.RateLimits.Team) then return end
+	if not Inventory.ValidSlot(slot) then return teamError(player, "slot") end
+	local okName, clean = teamName(player, name)
+	if not okName then return teamError(player, clean) end
+	data = DataService.Get(player) -- el filtro espera: el jugador pudo salir
+	if not data then return end
+	local ok, team, extra = Inventory.SaveTeam(data, slot, clean, petIds)
+	if not ok then return teamError(player, team, extra) end
+	TeamResultRemote:FireClient(player, "save", slot, team)
+	notify(player, "Equipo guardado: " .. team.Name, GREEN)
+	sync(player)
+end)
+
+ApplyTeamRemote.OnServerEvent:Connect(function(player, slot)
+	local st, data = state[player], DataService.Get(player)
+	if not st or not data or typeof(slot) ~= "number" then return end
+	if rateLimited(st, "LastApplyTeam", Config.RateLimits.ApplyTeam) then return end
+	local ok, res, extra = Inventory.ApplyTeam(data, slot)
+	if not ok then return teamError(player, res, extra) end
+	local text = "Equipo aplicado: " .. plural(res.Equipped, "mascota", "mascotas")
+	if res.Missing > 0 then text ..= "; " .. plural(res.Missing, "ya no existe y se omitió", "ya no existen y se omitieron") end
+	if res.Skipped > 0 then text ..= "; " .. plural(res.Skipped, "no entra", "no entran") .. " en tu equipo" end
+	notify(player, text, (res.Missing > 0 or res.Skipped > 0) and GOLD or GREEN)
+	TeamResultRemote:FireClient(player, "apply", slot, res)
+	sync(player)
+end)
+
+RenameTeamRemote.OnServerEvent:Connect(function(player, slot, name)
+	local st, data = state[player], DataService.Get(player)
+	if not st or not data or typeof(slot) ~= "number" or typeof(name) ~= "string" then return end
+	if rateLimited(st, "LastTeam", Config.RateLimits.Team) then return end
+	if not Inventory.GetTeam(data, slot) then return teamError(player, Inventory.ValidSlot(slot) and "empty" or "slot") end
+	local okName, clean = teamName(player, name)
+	if not okName then return teamError(player, clean) end
+	data = DataService.Get(player)
+	if not data then return end
+	local ok, err = Inventory.RenameTeam(data, slot, clean)
+	if not ok then return teamError(player, err) end
+	TeamResultRemote:FireClient(player, "rename", slot, { Name = clean })
+	sync(player)
+end)
+
+DeleteTeamRemote.OnServerEvent:Connect(function(player, slot)
+	local st, data = state[player], DataService.Get(player)
+	if not st or not data or typeof(slot) ~= "number" then return end
+	if rateLimited(st, "LastTeam", Config.RateLimits.Team) then return end
+	local ok, err = Inventory.DeleteTeam(data, slot)
+	if not ok then return teamError(player, err) end
+	TeamResultRemote:FireClient(player, "delete", slot, nil)
+	notify(player, "Equipo borrado", GREEN)
+	sync(player)
+end)
+
+-- Regalos por tiempo jugado (la sesión vive en state[player].Playtime: se reinicia al salir del juego)
+local function itemName(itemId)
+	local def = Config.Items[itemId]
+	return def and def.Name or tostring(itemId)
+end
+
+local function rewardText(r)
+	if r.Kind == "Coins" then return "+" .. Config.FormatNumber(r.Amount) .. " " .. curName(r.Dim) end
+	if r.Kind == "Diamonds" then return "+" .. Config.FormatNumber(r.Amount) .. " Diamantes" end
+	if r.Kind == "Potion" then return "+" .. r.Amount .. " " .. Config.Potions.Types[r.Potion].Name end
+	return "+" .. r.Amount .. " " .. itemName(r.Item)
+end
+
+local function updatePlaytime(player, st)
+	player:SetAttribute("PlaytimeSeconds", math.floor(Gifts.Elapsed(st.Playtime, os.clock())))
+	player:SetAttribute("PlaytimeGiftsClaimed", Gifts.ClaimedText(st.Playtime))
+end
+
+ClaimPlaytimeGiftRemote.OnServerEvent:Connect(function(player, n)
+	local st, data = state[player], DataService.Get(player)
+	if not st or not data or not st.Playtime or typeof(n) ~= "number" then return end
+	if rateLimited(st, "LastPlaytimeGift", Config.RateLimits.PlaytimeGift) then return end
+	local ok, res, extra = Gifts.Claim(st.Playtime, data, n, os.clock())
+	if not ok then
+		if res == "wait" then return notify(player, "Ese regalo estará listo en " .. waitText(extra), GOLD) end
+		if res == "claimed" then return notify(player, "Ya reclamaste ese regalo", GOLD) end
+		return
+	end
+	updatePlaytime(player, st)
+	st.PlaytimeReady = Gifts.ReadyCount(st.Playtime, os.clock())
+	PlaytimeGiftClaimedRemote:FireClient(player, n, res)
+	notify(player, "Recibiste: " .. itemName(res), GREEN)
+	sync(player)
+end)
+
+OpenGiftRemote.OnServerEvent:Connect(function(player, itemId)
+	local st, data = state[player], DataService.Get(player)
+	if not st or not data or typeof(itemId) ~= "string" then return end
+	if rateLimited(st, "LastOpenGift", Config.RateLimits.OpenGift) then return end
+	local ok, res = Gifts.Open(data, itemId, rng, purchaseContext(player, data))
+	if not ok then
+		if res == "none" then notify(player, "No tienes ese regalo", RED) end
+		return
+	end
+	local parts = {}
+	for _, r in ipairs(res) do table.insert(parts, rewardText(r)) end
+	GiftOpenedRemote:FireClient(player, itemId, res)
+	notify(player, itemName(itemId) .. ": " .. table.concat(parts, ", "), GREEN)
+	sync(player)
+end)
+
+-- Cada segundo: atributos para la UI y aviso cuando un regalo queda listo
+task.spawn(function()
+	while true do
+		task.wait(1)
+		local now = os.clock()
+		for _, player in ipairs(Players:GetPlayers()) do
+			local st = state[player]
+			if st and st.Playtime and DataService.Get(player) then
+				updatePlaytime(player, st)
+				local ready = Gifts.ReadyCount(st.Playtime, now)
+				if ready > (st.PlaytimeReady or 0) then
+					notify(player, "Tienes un regalo por tiempo jugado listo para reclamar", GREEN)
+				end
+				st.PlaytimeReady = ready
+			end
+		end
+	end
+end)
+
 ---------------------------------------------------------------- jugadores
 -- Opciones de migración de datos (ver DataService.Reconcile)
 local rebirthOrder = {}
@@ -1067,17 +1368,30 @@ for dim in pairs(Config.Rebirths) do table.insert(rebirthOrder, dim) end
 table.sort(rebirthOrder, function(a, b) return Config.Rebirths[a].Number < Config.Rebirths[b].Number end)
 local LOAD_OPTS = { StartWorld = Config.SpawnWorld(), RebirthOrder = rebirthOrder, StartLevel = Config.PetLevels.StartLevel }
 
+-- Otro servidor abrió la partida (el lock ya no es de esta sesión): se saca al jugador para que no juegue sin guardar
+DataService.OnSessionLost = function(player)
+	if player.Parent then player:Kick("Tu partida se abrió en otro servidor. Vuelve a entrar para seguir jugando.") end
+end
+
 local function onPlayerAdded(player)
-	state[player] = {}
+	-- el tiempo de los regalos cuenta desde que entra (sesión nueva cada vez: no se guarda)
+	state[player] = { Playtime = Gifts.NewSession(os.clock()) }
 	local data = DataService.Load(player, LOAD_OPTS)
+	if not data or not player.Parent then return end -- salió mientras cargaba
+	if not DataService.IsLoaded(player) then
+		notify(player, "No se pudieron cargar tus datos: esta sesión no se guardará. Vuelve a entrar más tarde", RED)
+	end
 	if #data.Pets == 0 then
 		addPet(data, "Sprout")
 	else
-		equipBest(data)
+		Inventory.ClampEquipped(data)
+		Inventory.PruneTeams(data)
 	end
 	player.CharacterAdded:Connect(function()
-		state[player].LastTeleport = os.clock()
-		state[player].LastPos = nil
+		local st = state[player]
+		if not st then return end
+		st.LastTeleport = os.clock()
+		st.LastPos = nil
 		task.wait(0.5)
 		applyWalkSpeed(player)
 		sync(player)
@@ -1097,15 +1411,17 @@ Players.PlayerRemoving:Connect(function(player)
 	for _, b in pairs(breakables) do b.DamageBy[player] = nil end
 end)
 
+-- Autoguardado (también renueva el lock de sesión de cada jugador)
 task.spawn(function()
 	while true do
-		task.wait(120)
+		task.wait(Config.Save.AutoSaveInterval)
 		DataService.SaveAll()
 	end
 end)
 
+-- Al cerrar el servidor: guarda y libera a todos en paralelo (Roblox espera hasta 30 s)
 game:BindToClose(function()
-	DataService.SaveAll()
+	DataService.CloseAll(Config.Save.CloseTimeout)
 end)
 
 ---------------------------------------------------------------- herramientas de prueba (solo Studio)
@@ -1181,8 +1497,30 @@ if RunService:IsStudio() then
 		elseif cmd == "freepotions" then -- reinicia el cooldown y los saltos del día de las pociones gratis
 			data.FreePotions.NextClaim = 0
 			data.FreePotions.SkipsUsed = 0
+		elseif cmd == "fillpets" then -- value = número o { Name = "Sprout", Count = n }; sin cantidad: hasta llenar el inventario
+			local name = typeof(value) == "table" and value.Name or "Sprout"
+			local count = typeof(value) == "number" and value or (typeof(value) == "table" and value.Count) or Inventory.Space(data)
+			for _ = 1, count do
+				if not addPet(data, name) then break end
+			end
+		elseif cmd == "item" then -- value = { Id = "GiftSmall", Count = 3 }
+			if typeof(value) ~= "table" or not Inventory.AddItem(data, value.Id, value.Count or 1) then return "item inválido" end
+		elseif cmd == "gifts" then -- value = cantidad de cada regalo (1 por defecto)
+			for id, def in pairs(Config.Items) do
+				if def.Type == "Gift" then Inventory.AddItem(data, id, value or 1) end
+			end
+		elseif cmd == "playtime" then -- value = segundos para adelantar el tiempo de los regalos de esta sesión
+			local st = state[player]
+			if not st or not st.Playtime or typeof(value) ~= "number" then return "valor inválido" end
+			st.Playtime.Offset += value
+			updatePlaytime(player, st)
+		elseif cmd == "lockstolen" then -- simula que otro servidor tomó la partida: el próximo guardado la da por perdida
+			return DataService.DebugStealLock(player) and "ok" or "sin DataStore"
+		elseif cmd == "missioncut" then -- value = segundos a recortar de la recarga (por defecto, lo de una misión)
+			cutMeditationCooldown(player, value or Config.Meditation.MissionCooldownCut)
+		elseif cmd == "equipbest" then Inventory.EquipBest(data)
 		elseif cmd == "get" then return HttpService:JSONEncode(data) end
-		equipBest(data)
+		Inventory.ClampEquipped(data)
 		applyWalkSpeed(player)
 		sync(player)
 		return "ok"

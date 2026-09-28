@@ -2,7 +2,8 @@
 local process = require("@lune/process")
 local H = require("./harness")
 
-for _, spec in ipairs({ "./stats.spec", "./enchants.spec", "./economy.spec", "./migration.spec", "./layout.spec", "./progression.spec", "./purchases.spec", "./server.spec" }) do
+for _, spec in ipairs({ "./stats.spec", "./enchants.spec", "./economy.spec", "./migration.spec", "./layout.spec", "./progression.spec",
+	"./purchases.spec", "./inventory.spec", "./gifts.spec", "./datastore.spec", "./server.spec" }) do
 	require(spec)
 end
 
