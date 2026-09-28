@@ -17,4 +17,4 @@ se queda en Studio y Rojo NO lo toca (`$ignoreUnknownInstances: true` en todos l
 ## Reglas para la sesión en la nube
 - No hay Studio ni playtests: no inventar nombres de instancias que no existan en el mapa.
 - Toda economía/daño en el servidor; todo teleport por `teleport()` del servidor (anticheat).
-- Usar 💰, no 🪙 (no renderiza en Roblox).
+- Nada de emojis en los textos del juego.
