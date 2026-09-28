@@ -18,13 +18,6 @@ H.test("jugador nuevo: todo en base", function()
 	H.eq(Stats.Get(d, "MaxEquipped"), Config.MaxEquipped)
 end)
 
-H.test("rebirths solo afectan la base de Coins (como antes)", function()
-	local d = H.data(M)
-	d.Rebirths = 2
-	H.eq(Stats.Get(d, "Coins", "Nexus"), 2) -- 1 + 2 x 0.5
-	H.eq(Stats.Get(d, "Diamonds"), 1)
-end)
-
 H.test("mejoras: el bonus es el total del nivel, no se suman niveles", function()
 	local d = H.data(M)
 	d.Upgrades.WalkSpeed = 1
@@ -63,8 +56,8 @@ H.test("encantamiento de otra stat no afecta", function()
 end)
 
 H.test("el bonus de encantamiento se multiplica por la variante", function()
-	local golden = { Name = "Owl", Variant = "Golden", Enchant = { Id = "Coins", Level = 5 } }
-	local void = { Name = "Fox", Variant = "Void", Enchant = { Id = "Coins", Level = 1 } }
+	local golden = { Name = "Owl", Variant = "Golden", Level = 0, Enchant = { Id = "Coins", Level = 5 } }
+	local void = { Name = "Fox", Variant = "Void", Level = 0, Enchant = { Id = "Coins", Level = 1 } }
 	H.near(Stats.PetEnchantBonus(golden, "Coins"), 1.5)
 	H.near(Stats.PetEnchantBonus(void, "Coins"), 0.6)
 	local d = H.data(M, { { Name = "Owl", Variant = "Rainbow", Enchant = { Id = "EssenceMaster", Level = 3 } } })
@@ -77,9 +70,8 @@ H.test("combinación completa: base x (1 + mejora) x (1 + suma encantamientos)",
 		{ Name = "Fox", Variant = "Void", Enchant = { Id = "Coins", Level = 1 } },   -- +0.6
 		{ Name = "Fawn", Enchant = { Id = "Haste", Level = 3 } },                    -- otra stat
 	})
-	d.Rebirths = 1
 	d.Upgrades.Coins = { Nexus = 2 }
-	H.near(Stats.Get(d, "Coins", "Nexus"), 1.5 * 1.25 * (1 + 1.5 + 0.6))
+	H.near(Stats.Get(d, "Coins", "Nexus"), 1.25 * (1 + 1.5 + 0.6))
 	H.near(Stats.Get(d, "BreakSpeed"), 1.6)
 end)
 
@@ -94,21 +86,21 @@ end)
 
 H.test("MaxEquipped suma la mejora PetsEquipped", function()
 	local d = H.data(M)
-	H.eq(Stats.MaxEquipped(d), 4)
+	H.eq(Stats.MaxEquipped(d), 3)
 	d.Upgrades.PetsEquipped = 1
-	H.eq(Stats.MaxEquipped(d), 5)
+	H.eq(Stats.MaxEquipped(d), 4)
 	H.ok(not Stats.HasUpgrade(d, "AutoEnchant"))
 	d.Upgrades.AutoEnchant = 1
 	H.ok(Stats.HasUpgrade(d, "AutoEnchant"))
 end)
 
-H.test("poder real con variante y rebirths", function()
-	H.near(Stats.PetPower({ Name = "Owl", Variant = "Golden" }), 13.5)
-	H.near(Stats.PetPower({ Name = "NexusDragon", Variant = "Void" }), 450)
-	H.eq(Stats.PetPower({ Name = "Owl" }), 9) -- sin Variant = Normal
+H.test("poder real con variante (los rebirths ya no dan poder)", function()
+	H.near(Stats.PetPower({ Name = "Owl", Variant = "Golden", Level = 0 }), 13.5)
+	H.near(Stats.PetPower({ Name = "NexusDragon", Variant = "Void", Level = 0 }), 450)
+	H.eq(Stats.PetPower({ Name = "Owl", Level = 0 }), 9) -- sin Variant = Normal
 	local d = H.data(M, { { Name = "Owl", Variant = "Rainbow" }, { Name = "Fox" }, { Name = "Bunny", Equipped = false } })
-	d.Rebirths = 1
-	H.near(Stats.Power(d), (18 + 4) * 1.5)
+	d.RebirthsDone.Greenwood = true
+	H.near(Stats.Power(d), 18 + 4)
 end)
 
 H.test("suerte: con Luck = 1 las probabilidades son las base", function()
@@ -134,7 +126,7 @@ end)
 H.test("Compute devuelve todas las stats", function()
 	local s = Stats.Compute(H.data(M, { { Name = "Owl" } }), "Nexus")
 	for stat in pairs(Config.StatDefs) do H.ok(s[stat] ~= nil, "falta " .. stat) end
-	H.eq(s.MaxEquipped, 4)
+	H.eq(s.MaxEquipped, 3)
 	H.eq(s.Power, 9)
 end)
 

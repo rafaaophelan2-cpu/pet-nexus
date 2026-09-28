@@ -60,13 +60,13 @@ H.test("EquipBest ordena por poder real (con variante) y respeta MaxEquipped", f
 	Economy.EquipBest(d)
 	local equipped = {}
 	for _, p in ipairs(d.Pets) do if p.Equipped then equipped[p.Id] = true end end
-	H.ok(equipped.o and equipped.fa and equipped.f and equipped.s2, "equipa Owl(9), Fawn(7), Fox dorado(6), Sprout void(3)")
-	H.ok(not equipped.b and not equipped.s)
+	H.ok(equipped.o and equipped.fa and equipped.f, "equipa Owl(9), Fawn(7), Fox dorado(6)")
+	H.ok(not equipped.s2 and not equipped.b and not equipped.s)
 	d.Upgrades.PetsEquipped = 1
 	Economy.EquipBest(d)
 	local n = 0
 	for _, p in ipairs(d.Pets) do if p.Equipped then n += 1 end end
-	H.eq(n, 5)
+	H.eq(n, 4)
 end)
 
 H.test("AddDiamonds aplica el multiplicador de Diamonds", function()

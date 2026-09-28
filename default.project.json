@@ -10,7 +10,9 @@
         "Config": { "$path": "src/shared/Config.luau" },
         "Icons": { "$path": "src/shared/Icons.luau" },
         "Stats": { "$path": "src/shared/Stats.luau" },
-        "Economy": { "$path": "src/shared/Economy.luau" }
+        "Economy": { "$path": "src/shared/Economy.luau" },
+        "Progression": { "$path": "src/shared/Progression.luau" },
+        "Purchases": { "$path": "src/shared/Purchases.luau" }
       }
     },
     "ServerScriptService": {

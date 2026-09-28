@@ -15,16 +15,19 @@ end
 function H.modules()
 	local mods = {}
 	local env = {
-		script = { Parent = { Config = "Config", Stats = "Stats", Economy = "Economy" } },
+		script = { Parent = { Config = "Config", Stats = "Stats", Economy = "Economy", Progression = "Progression", Purchases = "Purchases" } },
 		require = function(key)
 			return assert(mods[key], "módulo no cargado: " .. tostring(key))
 		end,
 		Color3 = roblox.Color3,
 		Vector3 = roblox.Vector3,
+		CFrame = roblox.CFrame,
 	}
 	mods.Config = load("src/shared/Config.luau", env)
 	mods.Stats = load("src/shared/Stats.luau", env)
 	mods.Economy = load("src/shared/Economy.luau", env)
+	mods.Progression = load("src/shared/Progression.luau", env)
+	mods.Purchases = load("src/shared/Purchases.luau", env)
 	mods.DataService = load("src/server/DataService.luau", {
 		game = { GetService = function() return { GetDataStore = function() error("sin DataStore en tests") end } end },
 		warn = function() end,
@@ -57,13 +60,14 @@ function H.seq(values)
 	}
 end
 
--- Datos de jugador nuevos (los default de DataService) con mascotas opcionales
+-- Datos de jugador nuevos (los default de DataService, con Nexus desbloqueado como hoy) con mascotas opcionales.
+-- Las mascotas quedan en nivel 0 (sin bonus de nivel) salvo que se indique Level, para aislar cada cálculo.
 function H.data(mods, pets)
-	local d = mods.DataService.Default()
+	local d = mods.DataService.Reconcile(mods.DataService.Default(), { StartWorld = "Nexus" })
 	for _, p in ipairs(pets or {}) do
 		table.insert(d.Pets, {
 			Id = p.Id or ("pet" .. (#d.Pets + 1)), Name = p.Name, Equipped = p.Equipped ~= false,
-			Variant = p.Variant or "Normal", Enchant = p.Enchant,
+			Variant = p.Variant or "Normal", Enchant = p.Enchant, Level = p.Level or 0, XP = 0,
 		})
 	end
 	return d

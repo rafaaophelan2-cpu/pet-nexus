@@ -38,7 +38,7 @@ end
 
 ---------------------------------------------------------------- mascotas
 function Economy.NewPet(id, name)
-	return { Id = id, Name = name, Equipped = false, Variant = Config.DefaultVariant }
+	return { Id = id, Name = name, Equipped = false, Variant = Config.DefaultVariant, Level = Config.PetLevels.StartLevel, XP = 0 }
 end
 
 function Economy.FindPet(data, petId)
@@ -199,7 +199,7 @@ function Economy.MatchesTarget(enchant, targetId, minLevel)
 end
 
 ---------------------------------------------------------------- mejoras
--- Precio de un nivel: price, currency, dimensión de la moneda
+-- Precio de un nivel: price, currency, dimensión de la moneda (las globales sin Dimension: el mundo inicial)
 function Economy.UpgradeCost(id, level, dim)
 	local def = Config.Upgrades[id]
 	local entry = def and def.Levels[level]
@@ -207,7 +207,7 @@ function Economy.UpgradeCost(id, level, dim)
 	if def.PerDimension then
 		return math.floor(entry.Price * Config.UpgradePriceScale(dim)), def.Currency, dim
 	end
-	return entry.Price, def.Currency, def.Dimension
+	return entry.Price, def.Currency, def.Dimension or Config.SpawnWorld()
 end
 
 -- Compra el nivel 'level' (tiene que ser el siguiente). dim: mundo de la mejora (solo PerDimension).

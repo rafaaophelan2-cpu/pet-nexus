@@ -1,6 +1,8 @@
 -- Pet Nexus: stats centralizados. Funciones puras: solo leen los datos del jugador (data) y Config, no tocan instancias.
 -- Las usa el servidor para decidir todo y el cliente para mostrar valores. Regla y definiciones en Config.StatDefs:
---   final = Base x (1 + bonus de mejora) x (1 + suma de bonus de encantamiento de las mascotas EQUIPADAS)
+--   final = Base x (1 + mejora) x (1 + encantamientos equipados) x (1 + rebirths) x (1 + rango) x (1 + gamepasses)
+--                x (1 + pociones activas)
+-- Datos que se leen: Pets, Upgrades, RebirthsDone, Rank, Passes, PotionTime.
 local Config = require(script.Parent.Config)
 
 local Stats = {}
@@ -11,23 +13,30 @@ function Stats.VariantMultiplier(variant)
 	return v and v.Multiplier or 1
 end
 
--- Poder real de una mascota (base x variante)
+-- Multiplicador por nivel de una mascota: 1 + nivel x BonusPerLevel
+function Stats.LevelMultiplier(pet)
+	local lv = type(pet.Level) == "number" and pet.Level or Config.PetLevels.StartLevel
+	lv = math.clamp(lv, 0, Config.PetLevels.MaxLevel)
+	return 1 + lv * Config.PetLevels.BonusPerLevel
+end
+
+-- Poder real de una mascota (base x variante x nivel)
 function Stats.PetPower(pet)
 	local def = Config.Pets[pet.Name]
 	if not def then return 0 end
-	return def.Power * Stats.VariantMultiplier(pet.Variant)
+	return def.Power * Stats.VariantMultiplier(pet.Variant) * Stats.LevelMultiplier(pet)
 end
 
--- Poder total de las mascotas equipadas (con rebirths): es lo que daña a los rompibles
+-- Poder total de las mascotas equipadas: es lo que daña a los rompibles
 function Stats.Power(data)
 	local total = 0
 	for _, pet in ipairs(data.Pets) do
 		if pet.Equipped then total += Stats.PetPower(pet) end
 	end
-	return total * (1 + (data.Rebirths or 0) * Config.RebirthBonus)
+	return total
 end
 
--- Bonus del encantamiento de UNA mascota sobre una stat, ya multiplicado por su variante (0 si no aplica)
+-- Bonus del encantamiento de UNA mascota sobre una stat, ya multiplicado por su variante y su nivel (0 si no aplica)
 function Stats.PetEnchantBonus(pet, stat)
 	local e = pet.Enchant
 	if type(e) ~= "table" then return 0 end
@@ -35,7 +44,7 @@ function Stats.PetEnchantBonus(pet, stat)
 	if not def or def.Stat ~= stat then return 0 end
 	local bonus = def.Levels[e.Level]
 	if not bonus then return 0 end
-	return bonus * Stats.VariantMultiplier(pet.Variant)
+	return bonus * Stats.VariantMultiplier(pet.Variant) * Stats.LevelMultiplier(pet)
 end
 
 -- Suma de bonus de encantamiento de las mascotas equipadas para una stat
@@ -47,6 +56,7 @@ function Stats.EnchantSum(data, stat)
 	return sum
 end
 
+---------------------------------------------------------------- mejoras
 -- Nivel comprado de una mejora (PerDimension: el de ese mundo). 0 = sin comprar.
 function Stats.UpgradeLevel(data, id, dim)
 	local def = Config.Upgrades[id]
@@ -75,34 +85,116 @@ function Stats.UpgradeBonus(data, stat, dim)
 	return total
 end
 
-function Stats.Base(data, stat)
-	local def = Config.StatDefs[stat]
-	local base = def.Base
-	if def.Rebirths then base *= 1 + (data.Rebirths or 0) * Config.RebirthBonus end
-	return base
+---------------------------------------------------------------- rebirths, rango, gamepasses y pociones
+function Stats.RebirthDone(data, dim)
+	return type(data.RebirthsDone) == "table" and data.RebirthsDone[dim] == true
 end
 
+-- Cantidad de rebirths hechos
+function Stats.RebirthCount(data)
+	local n = 0
+	for dim in pairs(Config.Rebirths) do
+		if Stats.RebirthDone(data, dim) then n += 1 end
+	end
+	return n
+end
+
+function Stats.RebirthBonus(data, stat)
+	local total = 0
+	for dim, def in pairs(Config.Rebirths) do
+		if Stats.RebirthDone(data, dim) then total += def.Bonus[stat] or 0 end
+	end
+	return total
+end
+
+-- ¿Algún rebirth hecho desbloquea el rango?
+function Stats.RankUnlocked(data)
+	for dim, def in pairs(Config.Rebirths) do
+		if def.Unlocks and def.Unlocks.Rank and Stats.RebirthDone(data, dim) then return true end
+	end
+	return false
+end
+
+function Stats.Rank(data)
+	local r = data.Rank
+	if type(r) ~= "number" then return 0 end
+	return math.clamp(math.floor(r), 0, #Config.Ranks.Levels)
+end
+
+function Stats.RankBonus(data, stat)
+	local entry = Config.Ranks.Levels[Stats.Rank(data)]
+	if not entry then return 0 end
+	for _, s in ipairs(Config.Ranks.Stats) do
+		if s == stat then return entry.Bonus end
+	end
+	return 0
+end
+
+function Stats.HasPass(data, key)
+	return type(data.Passes) == "table" and data.Passes[key] == true and Config.GamePasses[key] ~= nil
+end
+
+function Stats.PassBonus(data, stat)
+	local total = 0
+	for key, def in pairs(Config.GamePasses) do
+		if def.Bonus and Stats.HasPass(data, key) then total += def.Bonus[stat] or 0 end
+	end
+	return total
+end
+
+-- Segundos que le quedan a la poción de ese tipo (0 = inactiva)
+function Stats.PotionRemaining(data, potionType)
+	local t = type(data.PotionTime) == "table" and data.PotionTime[potionType]
+	return type(t) == "number" and math.max(t, 0) or 0
+end
+
+function Stats.PotionBonus(data, stat)
+	local total = 0
+	for id, def in pairs(Config.Potions.Types) do
+		if def.Stat == stat and Stats.PotionRemaining(data, id) > 0 then total += def.Bonus end
+	end
+	return total
+end
+
+---------------------------------------------------------------- valor final
 -- Cantidad máxima de mascotas equipadas (entero)
 function Stats.MaxEquipped(data)
-	return Config.MaxEquipped + Stats.UpgradeBonus(data, "MaxEquipped")
+	return Config.MaxEquipped + Stats.UpgradeBonus(data, "MaxEquipped") + Stats.RebirthBonus(data, "MaxEquipped")
+		+ Stats.PassBonus(data, "MaxEquipped")
+end
+
+-- Factores por fuente (para la UI y los tests): cada uno es 1 + la suma de bonus de esa fuente
+function Stats.Breakdown(data, stat, dim)
+	return {
+		Base = Config.StatDefs[stat].Base,
+		Upgrade = 1 + Stats.UpgradeBonus(data, stat, dim),
+		Enchant = 1 + Stats.EnchantSum(data, stat),
+		Rebirth = 1 + Stats.RebirthBonus(data, stat),
+		Rank = 1 + Stats.RankBonus(data, stat),
+		GamePass = 1 + Stats.PassBonus(data, stat),
+		Potion = 1 + Stats.PotionBonus(data, stat),
+	}
 end
 
 -- Valor final de una stat. dim solo importa para las mejoras por dimensión (Coins).
 function Stats.Get(data, stat, dim)
 	if stat == "MaxEquipped" then return Stats.MaxEquipped(data) end
 	assert(Config.StatDefs[stat], "stat desconocida: " .. tostring(stat))
-	return Stats.Base(data, stat) * (1 + Stats.UpgradeBonus(data, stat, dim)) * (1 + Stats.EnchantSum(data, stat))
+	local b = Stats.Breakdown(data, stat, dim)
+	return b.Base * b.Upgrade * b.Enchant * b.Rebirth * b.Rank * b.GamePass * b.Potion
 end
 
 -- Todas las stats de un jugador (para debug y para la UI futura). Coins usa la dimensión dada.
 function Stats.Compute(data, dim)
-	local out = { MaxEquipped = Stats.MaxEquipped(data), Power = Stats.Power(data) }
+	local out = { MaxEquipped = Stats.MaxEquipped(data), Power = Stats.Power(data), Rank = Stats.Rank(data),
+		Rebirths = Stats.RebirthCount(data) }
 	for stat in pairs(Config.StatDefs) do
 		out[stat] = Stats.Get(data, stat, dim)
 	end
 	return out
 end
 
+---------------------------------------------------------------- suerte
 -- Pesos de un huevo con suerte aplicada (ver Config.LuckMinRarity). pool = { {petName, peso}, ... }
 function Stats.LuckWeights(pool, luck)
 	local out = {}
