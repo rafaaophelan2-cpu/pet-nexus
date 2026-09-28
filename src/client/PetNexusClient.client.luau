@@ -91,7 +91,7 @@ end
 ---------------------------------------------------------------- HUD (moneda del mundo + poder)
 local hud = Instance.new("Frame")
 hud.BackgroundTransparency = 1
-hud.Size = UDim2.fromOffset(290, 150)
+hud.Size = UDim2.fromOffset(290, 190)
 hud.Position = UDim2.new(0, 16, 0.5, -110)
 hud.Parent = gui
 
@@ -102,8 +102,14 @@ local curText = label(curRow, { Text = "0", Size = UDim2.new(1, -60, 0, 44), Pos
 gradient(curText, Color3.fromRGB(255, 255, 255), Color3.fromRGB(255, 225, 150))
 local curName = label(curRow, { Text = "", Size = UDim2.fromOffset(160, 16), Position = UDim2.fromOffset(48, -10), TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = Color3.fromRGB(255, 236, 170) })
 
-local powRow = glass(hud, { Size = UDim2.fromOffset(200, 48), Position = UDim2.fromOffset(34, 82) })
-Icons.Make(hud, "Power", { Size = UDim2.fromOffset(62, 62), Position = UDim2.fromOffset(2, 75), ZIndex = 3 })
+local powRow = glass(hud, { Size = UDim2.fromOffset(200, 48), Position = UDim2.fromOffset(34, 132) })
+Icons.Make(hud, "Power", { Size = UDim2.fromOffset(62, 62), Position = UDim2.fromOffset(2, 125), ZIndex = 3 })
+-- diamantes (moneda global)
+local diaRow = glass(hud, { Size = UDim2.fromOffset(200, 48), Position = UDim2.fromOffset(34, 74) })
+Icons.Make(hud, "Diamond", { Size = UDim2.fromOffset(56, 56), Position = UDim2.fromOffset(5, 70), ZIndex = 3 })
+local diaText = label(diaRow, { Text = "0", Size = UDim2.new(1, -60, 0, 36), Position = UDim2.fromOffset(40, 6), TextXAlignment = Enum.TextXAlignment.Left })
+gradient(diaText, Color3.fromRGB(255, 255, 255), Color3.fromRGB(150, 230, 255))
+label(diaRow, { Text = "DIAMANTES", Size = UDim2.fromOffset(160, 16), Position = UDim2.fromOffset(42, -10), TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = Color3.fromRGB(170, 235, 255) })
 local powerText = label(powRow, { Text = "0", Size = UDim2.new(1, -60, 0, 36), Position = UDim2.fromOffset(40, 6), TextXAlignment = Enum.TextXAlignment.Left })
 gradient(powerText, Color3.fromRGB(255, 255, 255), Color3.fromRGB(170, 225, 255))
 
@@ -1009,7 +1015,7 @@ local tpButton = Instance.new("TextButton")
 tpButton.Name = "TPButton"
 tpButton.Text = ""
 tpButton.Size = UDim2.fromOffset(86, 86)
-tpButton.Position = UDim2.new(0, 22, 0.5, 52)
+tpButton.Position = UDim2.new(0, 22, 0.5, 86)
 tpButton.BackgroundColor3 = Color3.fromRGB(150, 110, 255)
 tpButton.Parent = gui
 round(tpButton, UDim.new(0, 22)); stroke(tpButton, 3, Color3.new(1, 1, 1), 0.3)
@@ -1341,6 +1347,338 @@ task.spawn(function()
 end)
 
 ---------------------------------------------------------------- sync
+
+---------------------------------------------------------------- ventanas (Rebirth, Premium Shop, ...)
+local windows = {}
+local function makeWindow(name, titleText, iconName, w, h)
+	local win = Instance.new("Frame")
+	win.Name = name
+	win.AnchorPoint = Vector2.new(0.5, 0.5)
+	win.Position = UDim2.fromScale(0.5, 0.53)
+	win.Size = UDim2.fromOffset(w, h)
+	win.BackgroundTransparency = 1
+	win.Visible = false
+	win.ZIndex = 30
+	win.Parent = gui
+	local sc = Instance.new("UIScale"); sc.Parent = win
+	Icons.Make(win, iconName, { Size = UDim2.fromOffset(80, 80), Position = UDim2.fromOffset(20, -20), ZIndex = 36 })
+	local t = label(win, { Text = titleText, Size = UDim2.fromOffset(w - 220, 60), Position = UDim2.fromOffset(104, -8), TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 35 })
+	t.UIStroke.Thickness = 5
+	gradient(t, Color3.new(1, 1, 1), Color3.fromRGB(255, 230, 160))
+	local body = Instance.new("Frame")
+	body.Size = UDim2.new(1, -20, 1, -70)
+	body.Position = UDim2.fromOffset(10, 60)
+	body.BackgroundColor3 = Color3.fromRGB(252, 252, 255)
+	body.ZIndex = 30
+	body.Parent = win
+	round(body, UDim.new(0, 24)); stroke(body, 4)
+	local closeB = button(win, { Text = "", Size = UDim2.fromOffset(58, 58), Position = UDim2.new(1, -46, 0, 34), BackgroundColor3 = Color3.fromRGB(255, 70, 100), ZIndex = 36 })
+	gradient(closeB, Color3.fromRGB(255, 120, 140), Color3.fromRGB(235, 50, 85))
+	Icons.CloseGlyph(closeB)
+	local W = { Frame = win, Body = body, Title = t }
+	function W.Close() win.Visible = false end
+	function W.Open()
+		for _, o in pairs(windows) do if o ~= W then o.Close() end end
+		if panel then panel.Visible = false end
+		local vp = camera.ViewportSize
+		local target = math.clamp(math.min(vp.X / (w + 60), vp.Y / (h + 60)), 0.45, 1)
+		sc.Scale = target * 0.85
+		win.Visible = true
+		TweenService:Create(sc, TweenInfo.new(0.22, Enum.EasingStyle.Back), { Scale = target }):Play()
+	end
+	closeB.MouseButton1Click:Connect(W.Close)
+	windows[name] = W
+	return W
+end
+local function clearGui(frame)
+	for _, c in ipairs(frame:GetChildren()) do if c:IsA("GuiObject") then c:Destroy() end end
+end
+local function pctText(v) return "+" .. math.floor(v * 100 + 0.5) .. "%" end
+local STAT_ICON = { Coins = "Coin", Diamonds = "Diamond", Luck = "Luck", MaxEquipped = "Power", Essence = "Meditation", XP = "Power", HatchSpeed = "Potion_HatchSpeed" }
+local function statLine(stat, v)
+	if stat == "Coins" then return pctText(v) .. " Coins (todas las monedas)"
+	elseif stat == "Diamonds" then return pctText(v) .. " Diamantes"
+	elseif stat == "Luck" then return pctText(v) .. " Suerte"
+	elseif stat == "MaxEquipped" then return "+" .. v .. " mascota" .. (v == 1 and "" or "s") .. " equipada" .. (v == 1 and "" or "s")
+	elseif stat == "Essence" then return pctText(v) .. " Esencia"
+	elseif stat == "XP" then return pctText(v) .. " XP de mascotas"
+	elseif stat == "HatchSpeed" then return pctText(v) .. " velocidad de huevos"
+	end
+	return pctText(v) .. " " .. stat
+end
+local Progression = require(ReplicatedStorage.PetNexus:WaitForChild("Progression"))
+local Purchases = require(ReplicatedStorage.PetNexus:WaitForChild("Purchases"))
+
+---------------------------------------------------------------- panel de REBIRTH (E en la estatua dorada)
+local rebirthWin = makeWindow("RebirthPanel", "Rebirth", "Rebirth", 640, 540)
+local rebirthDim = nil
+local refreshRebirth
+refreshRebirth = function()
+	local body = rebirthWin.Body
+	clearGui(body)
+	local def = rebirthDim and Config.Rebirths[rebirthDim]
+	if not def or not data then return end
+	local info = Config.WorldInfo(rebirthDim)
+	rebirthWin.Title.Text = "Rebirth " .. def.Number
+	label(body, { Text = info.Display, Size = UDim2.new(1, -40, 0, 34), Position = UDim2.fromOffset(20, 12), TextColor3 = Color3.fromRGB(255, 205, 80), ZIndex = 31 })
+	label(body, { Text = "Beneficios permanentes", Size = UDim2.new(1, -40, 0, 24), Position = UDim2.fromOffset(20, 50), ZIndex = 31 })
+	local y = 84
+	local order = { "Coins", "Diamonds", "Luck", "MaxEquipped", "Essence", "XP", "HatchSpeed" }
+	for _, stat in ipairs(order) do
+		local v = def.Bonus and def.Bonus[stat]
+		if v and v ~= 0 then
+			local row = Instance.new("Frame")
+			row.Size = UDim2.new(1, -60, 0, 48); row.Position = UDim2.fromOffset(30, y)
+			row.BackgroundColor3 = Color3.fromRGB(255, 246, 220); row.ZIndex = 31; row.Parent = body
+			round(row, UDim.new(0, 16)); stroke(row, 3, Color3.fromRGB(235, 190, 90))
+			Icons.Make(row, STAT_ICON[stat] or "Power", { Size = UDim2.fromOffset(44, 44), Position = UDim2.fromOffset(8, 2), ZIndex = 32 })
+			label(row, { Text = statLine(stat, v), Size = UDim2.new(1, -80, 0, 30), Position = UDim2.fromOffset(62, 9), TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = Color3.fromRGB(120, 80, 20), ZIndex = 32 })
+			y += 56
+		end
+	end
+	if def.Unlocks and def.Unlocks.Rank then
+		label(body, { Text = "Desbloquea la sección de mejoras RANGO", Size = UDim2.new(1, -60, 0, 26), Position = UDim2.fromOffset(30, y + 2), TextColor3 = Color3.fromRGB(170, 120, 255), ZIndex = 31 })
+		y += 34
+	end
+	local keep = Stats.HasPass(data, "RebirthPlus")
+	label(body, { Text = keep and "Con REBIRTH+ conservas tus monedas y áreas" or ("Se reinician las monedas y áreas de " .. info.Display),
+		Size = UDim2.new(1, -60, 0, 24), Position = UDim2.new(0, 30, 1, -120), TextColor3 = keep and Color3.fromRGB(120, 210, 120) or Color3.fromRGB(235, 120, 110), ZIndex = 31 })
+	local ok, err, extra = Progression.CanRebirth(data, rebirthDim)
+	local txt = "REBIRTH"
+	if not ok then
+		if err == "done" then txt = "YA HICISTE ESTE REBIRTH"
+		elseif err == "order" then txt = "PRIMERO EL REBIRTH ANTERIOR"
+		elseif err == "area" then txt = "LLEGA AL ÁREA " .. tostring(extra)
+		else txt = "NO DISPONIBLE" end
+	end
+	local btn = button(body, { Text = "", Size = UDim2.fromOffset(360, 70), Position = UDim2.new(0.5, -180, 1, -88), BackgroundColor3 = ok and Color3.fromRGB(255, 200, 60) or Color3.fromRGB(180, 176, 196), AutoButtonColor = ok, ZIndex = 32 })
+	if ok then gradient(btn, Color3.fromRGB(255, 235, 120), Color3.fromRGB(240, 165, 30)) end
+	label(btn, { Text = txt, Size = UDim2.new(1, -20, 1, -16), Position = UDim2.fromOffset(10, 8), ZIndex = 33 })
+	btn.MouseButton1Click:Connect(function()
+		if not ok then return end
+		Remotes.Rebirth:FireServer(rebirthDim)
+		rebirthWin.Close()
+	end)
+end
+local function openRebirth(dim)
+	rebirthDim = dim
+	refreshRebirth()
+	rebirthWin.Open()
+end
+
+-- ascensión: el personaje sale disparado al cielo, pantalla a negro y reaparece en el spawn (lo teletransporta el servidor)
+local blackout = Instance.new("Frame")
+blackout.Size = UDim2.fromScale(1, 1)
+blackout.BackgroundColor3 = Color3.new(0, 0, 0)
+blackout.BackgroundTransparency = 1
+blackout.ZIndex = 95
+blackout.Parent = gui
+Remotes:WaitForChild("RebirthResult").OnClientEvent:Connect(function(dim, info)
+	for _, o in pairs(windows) do o.Close() end
+	local char = player.Character
+	local hrp = char and char:FindFirstChild("HumanoidRootPart")
+	if not hrp then return end
+	local dur = (info and info.Ascension) or Config.RebirthAscension or 3
+	local start = hrp.Position
+	-- columna de luz dorada en el punto de partida
+	local beam = Instance.new("Part")
+	beam.Anchored = true; beam.CanCollide = false; beam.CanQuery = false; beam.CanTouch = false; beam.CastShadow = false
+	beam.Shape = Enum.PartType.Cylinder; beam.Material = Enum.Material.Neon; beam.Color = Color3.fromRGB(255, 225, 130)
+	beam.Size = Vector3.new(260, 10, 10); beam.CFrame = CFrame.new(start + Vector3.new(0, 128, 0)) * CFrame.Angles(0, 0, math.rad(90))
+	beam.Transparency = 0.25; beam.Parent = workspace
+	TweenService:Create(beam, TweenInfo.new(dur + 1), { Transparency = 1, Size = Vector3.new(260, 18, 18) }):Play()
+	task.delay(dur + 1.2, function() beam:Destroy() end)
+	local spark = Instance.new("ParticleEmitter")
+	spark.Rate = 60; spark.Lifetime = NumberRange.new(0.8, 1.4); spark.Speed = NumberRange.new(4, 10); spark.SpreadAngle = Vector2.new(180, 180)
+	spark.LightEmission = 1; spark.Size = NumberSequence.new(0.8, 0); spark.Color = ColorSequence.new(Color3.fromRGB(255, 240, 170), Color3.fromRGB(255, 190, 80))
+	spark.Parent = hrp
+	hrp.Anchored = true
+	local t0 = os.clock()
+	local conn = RunService.RenderStepped:Connect(function()
+		local t = math.min((os.clock() - t0) / dur, 1)
+		hrp.CFrame = CFrame.new(start + Vector3.new(0, (t ^ 2) * 170, 0)) * CFrame.Angles(0, t * math.pi * 6, 0)
+	end)
+	task.delay(math.max(0, dur - 0.7), function()
+		TweenService:Create(blackout, TweenInfo.new(0.6), { BackgroundTransparency = 0 }):Play()
+	end)
+	task.wait(dur)
+	conn:Disconnect()
+	local before = hrp.Position
+	local waited = 0
+	while waited < 2.5 and (hrp.Position - before).Magnitude < 20 do task.wait(0.1); waited += 0.1 end
+	hrp.Anchored = false
+	spark.Enabled = false
+	task.delay(2, function() spark:Destroy() end)
+	task.wait(0.4)
+	TweenService:Create(blackout, TweenInfo.new(0.9), { BackgroundTransparency = 1 }):Play()
+	-- cartel de celebración
+	local n = (info and info.Number) or 1
+	local holder = Instance.new("Frame"); holder.BackgroundTransparency = 1; holder.Size = UDim2.fromScale(1, 1); holder.ZIndex = 60; holder.Parent = gui
+	fx_rays(holder, Color3.fromRGB(255, 215, 90), 61, 520)
+	local big = label(holder, { Text = "¡REBIRTH " .. n .. "!", Size = UDim2.fromOffset(700, 90), AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.42), ZIndex = 63 })
+	gradient(big, Color3.fromRGB(255, 250, 200), Color3.fromRGB(255, 180, 40))
+	big.UIStroke.Thickness = 6
+	label(holder, { Text = (info and info.Kept) and "Conservaste tus monedas y áreas (REBIRTH+)" or "Tus beneficios ya están activos",
+		Size = UDim2.fromOffset(700, 36), AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.52), ZIndex = 63 })
+	fx_confetti(holder, 60, 62)
+	task.delay(3.5, function() holder:Destroy() end)
+end)
+
+---------------------------------------------------------------- vitrina de la PREMIUM SHOP (Robux)
+local premiumWin = makeWindow("PremiumShopPanel", "Premium Shop", "Premium", 860, 580)
+local premiumTab = "Passes"
+local PASS_ORDER = { "VIP", "DoubleCoins", "DoubleDiamonds", "GoodLuck", "InsaneLuck", "PremiumPetEquip", "DeluxePetEquip", "DoubleEssence", "DoubleXP", "RebirthPlus" }
+local PASS_ICON = { VIP = "Premium", DoubleCoins = "Coin", DoubleDiamonds = "Diamond", GoodLuck = "Luck", InsaneLuck = "Luck", RebirthPlus = "Rebirth",
+	PremiumPetEquip = "Power", DeluxePetEquip = "Power", DoubleEssence = "Meditation", DoubleXP = "Power" }
+local function robux(n) return tostring(n) .. " R$" end
+local function buyButton(parent, text, pos, size, enabled, onClick)
+	local b = button(parent, { Text = "", Size = size, Position = pos, BackgroundColor3 = enabled and Color3.fromRGB(95, 215, 90) or Color3.fromRGB(180, 176, 196), AutoButtonColor = enabled, ZIndex = 34 })
+	if enabled then gradient(b, Color3.fromRGB(140, 240, 110), Color3.fromRGB(60, 175, 60)) end
+	label(b, { Text = text, Size = UDim2.new(1, -10, 1, -10), Position = UDim2.fromOffset(5, 5), ZIndex = 35 })
+	if enabled then b.MouseButton1Click:Connect(onClick) end
+	return b
+end
+local refreshPremium
+local premiumTabs = Instance.new("Frame")
+premiumTabs.BackgroundTransparency = 1
+premiumTabs.Size = UDim2.new(1, -40, 0, 50)
+premiumTabs.Position = UDim2.fromOffset(20, 12)
+premiumTabs.ZIndex = 31
+premiumTabs.Parent = premiumWin.Body
+local premiumList = Instance.new("ScrollingFrame")
+premiumList.Size = UDim2.new(1, -30, 1, -80)
+premiumList.Position = UDim2.fromOffset(15, 70)
+premiumList.BackgroundTransparency = 1
+premiumList.BorderSizePixel = 0
+premiumList.ScrollBarThickness = 6
+premiumList.AutomaticCanvasSize = Enum.AutomaticSize.Y
+premiumList.CanvasSize = UDim2.new()
+premiumList.ZIndex = 31
+premiumList.Parent = premiumWin.Body
+local function card(parent, order, h)
+	local c = Instance.new("Frame")
+	c.LayoutOrder = order
+	c.Size = UDim2.new(1, -12, 0, h)
+	c.BackgroundColor3 = Color3.fromRGB(248, 244, 255)
+	c.ZIndex = 32
+	c.Parent = parent
+	round(c, UDim.new(0, 18)); stroke(c, 3)
+	return c
+end
+refreshPremium = function()
+	if not data then return end
+	clearGui(premiumTabs)
+	for k, tb in ipairs({ { "Passes", "Pases" }, { "Potions", "Pociones" }, { "Packs", "Paquetes" } }) do
+		local sel = premiumTab == tb[1]
+		local b = button(premiumTabs, { Text = "", Size = UDim2.fromOffset(180, 46), Position = UDim2.fromOffset((k - 1) * 190, 0), BackgroundColor3 = sel and Color3.fromRGB(200, 120, 255) or Color3.new(1, 1, 1), ZIndex = 32 })
+		if sel then gradient(b, Color3.fromRGB(230, 170, 255), Color3.fromRGB(160, 90, 240)) end
+		label(b, { Text = tb[2], Size = UDim2.new(1, -10, 1, -10), Position = UDim2.fromOffset(5, 5), TextColor3 = sel and Color3.new(1, 1, 1) or INK, ZIndex = 33 })
+		b.MouseButton1Click:Connect(function() premiumTab = tb[1]; refreshPremium() end)
+	end
+	clearGui(premiumList)
+	local lay = Instance.new("UIListLayout"); lay.Padding = UDim.new(0, 10); lay.SortOrder = Enum.SortOrder.LayoutOrder; lay.Parent = premiumList
+	local pad = Instance.new("UIPadding"); pad.PaddingTop = UDim.new(0, 4); pad.PaddingLeft = UDim.new(0, 4); pad.Parent = premiumList
+	if premiumTab == "Passes" then
+		for i, key in ipairs(PASS_ORDER) do
+			local def = Config.GamePasses[key]
+			if def then
+				local c = card(premiumList, i, 84)
+				Icons.Make(c, PASS_ICON[key] or "Premium", { Size = UDim2.fromOffset(70, 70), Position = UDim2.fromOffset(8, 7), ZIndex = 33 })
+				label(c, { Text = def.Name, Size = UDim2.fromOffset(420, 32), Position = UDim2.fromOffset(88, 8), TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 33 })
+				local parts = {}
+				if def.VipAccess then table.insert(parts, "Acceso a la zona VIP") end
+				for _, stat in ipairs({ "Coins", "Diamonds", "Luck", "MaxEquipped", "Essence", "XP" }) do
+					if def.Bonus and def.Bonus[stat] then table.insert(parts, statLine(stat, def.Bonus[stat])) end
+				end
+				if def.KeepOnRebirth then table.insert(parts, "El Rebirth no reinicia tus mundos") end
+				label(c, { Text = table.concat(parts, " · "), Size = UDim2.fromOffset(480, 24), Position = UDim2.fromOffset(88, 44), TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = Color3.fromRGB(120, 110, 150), ZIndex = 33 })
+				local owned = Stats.HasPass(data, key)
+				buyButton(c, owned and "COMPRADO" or robux(def.Price), UDim2.new(1, -170, 0.5, -24), UDim2.fromOffset(150, 48), not owned, function()
+					Remotes.PromptGamePass:FireServer(key)
+				end)
+			end
+		end
+	elseif premiumTab == "Potions" then
+		local types = {}
+		for id, def in pairs(Config.Potions.Types) do table.insert(types, { id, def }) end
+		table.sort(types, function(a, b) return a[2].Order < b[2].Order end)
+		for i, t in ipairs(types) do
+			local id, def = t[1], t[2]
+			local c = card(premiumList, i, 110)
+			Icons.Make(c, "Potion_" .. id, { Size = UDim2.fromOffset(70, 70), Position = UDim2.fromOffset(8, 8), ZIndex = 33 })
+			label(c, { Text = def.Name, Size = UDim2.fromOffset(360, 30), Position = UDim2.fromOffset(88, 8), TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 33 })
+			label(c, { Text = statLine(def.Stat, def.Bonus) .. " · " .. math.floor(Config.Potions.Duration / 60) .. " min (se suma el tiempo)", Size = UDim2.fromOffset(460, 22), Position = UDim2.fromOffset(88, 40), TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = Color3.fromRGB(120, 110, 150), ZIndex = 33 })
+			for k, q in ipairs({ { 1, "" }, { 3, "-10%" }, { 5, "-20%" }, { 10, "-30%" } }) do
+				local key = "Potion_" .. id .. "_" .. q[1]
+				local pd = Config.Products[key]
+				if pd then
+					local b = buyButton(c, "x" .. q[1] .. "  " .. robux(pd.Price), UDim2.fromOffset(88 + (k - 1) * 178, 68), UDim2.fromOffset(168, 36), true, function()
+						Remotes.PromptProduct:FireServer(key)
+					end)
+					if q[2] ~= "" then
+						local tag = label(c, { Text = q[2], Size = UDim2.fromOffset(52, 20), Position = UDim2.fromOffset(88 + (k - 1) * 178 + 122, 58), TextColor3 = Color3.fromRGB(255, 220, 80), ZIndex = 36 })
+						tag.Rotation = 8
+					end
+				end
+			end
+		end
+		for i, bd in ipairs({ { "PotionBundle_10", "Bundle de Pociones", "10 de cada poción (40 en total)", "-50%" }, { "PotionBundle_25", "Mega Bundle de Pociones", "25 de cada poción (100 en total)", "-65%" } }) do
+			local pd = Config.Products[bd[1]]
+			if pd then
+				local c = card(premiumList, 10 + i, 96)
+				c.BackgroundColor3 = Color3.fromRGB(255, 244, 220)
+				Icons.Make(c, "Premium", { Size = UDim2.fromOffset(74, 74), Position = UDim2.fromOffset(8, 11), ZIndex = 33 })
+				label(c, { Text = bd[2] .. "  " .. bd[4], Size = UDim2.fromOffset(460, 32), Position = UDim2.fromOffset(92, 12), TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = Color3.fromRGB(230, 150, 30), ZIndex = 33 })
+				label(c, { Text = bd[3], Size = UDim2.fromOffset(460, 24), Position = UDim2.fromOffset(92, 50), TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = Color3.fromRGB(120, 110, 150), ZIndex = 33 })
+				buyButton(c, robux(pd.Price), UDim2.new(1, -170, 0.5, -24), UDim2.fromOffset(150, 48), true, function() Remotes.PromptProduct:FireServer(bd[1]) end)
+			end
+		end
+	else
+		local dim = currentWorld()
+		local cur = Config.CurrencyOf(dim)
+		local order = 0
+		for _, kind in ipairs({ { "CoinPack", cur.Icon, cur.Name }, { "DiamondPack", "Diamond", "Diamantes" } }) do
+			for n = 1, 5 do
+				local key = kind[1] .. n
+				local pd = Config.Products[key]
+				if pd then
+					order += 1
+					local c = card(premiumList, order, 74)
+					Icons.Make(c, kind[2], { Size = UDim2.fromOffset(60, 60), Position = UDim2.fromOffset(10, 7), ZIndex = 33 })
+					local amount = Purchases.PackAmount(key, data, dim)
+					label(c, { Text = Config.FormatNumber(amount) .. " " .. kind[3], Size = UDim2.fromOffset(420, 32), Position = UDim2.fromOffset(84, 8), TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 33 })
+					label(c, { Text = kind[1] == "CoinPack" and "Crece con tu progreso en este mundo" or "Crece con tu progreso", Size = UDim2.fromOffset(420, 22), Position = UDim2.fromOffset(84, 42), TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = Color3.fromRGB(120, 110, 150), ZIndex = 33 })
+					buyButton(c, robux(pd.Price), UDim2.new(1, -170, 0.5, -22), UDim2.fromOffset(150, 44), true, function() Remotes.PromptProduct:FireServer(key) end)
+				end
+			end
+		end
+	end
+end
+local function openPremium()
+	premiumTab = "Passes"
+	refreshPremium()
+	premiumWin.Open()
+end
+
+---------------------------------------------------------------- prompts del mapa (E): estatua de Rebirth, Premium Shop, pociones gratis, globo
+ProximityPromptService.PromptTriggered:Connect(function(prompt)
+	local part = prompt.Parent
+	if not part or not part:IsA("BasePart") then return end
+	if CollectionService:HasTag(part, "RebirthStatue") then
+		openRebirth(part:GetAttribute("Dimension"))
+	elseif CollectionService:HasTag(part, "ShopCounter") and part:GetAttribute("ShopKind") == "Premium" then
+		openPremium()
+	elseif CollectionService:HasTag(part, "PotionShrine") then
+		Remotes.ClaimFreePotions:FireServer()
+	elseif CollectionService:HasTag(part, "WorldVehicle") then
+		notify("El viaje en " .. (prompt.ObjectText or "vehículo") .. " llega muy pronto", Color3.fromRGB(170, 225, 255))
+	end
+end)
+
+local function updateDiamonds()
+	diaText.Text = Config.FormatNumber(data and data.Diamonds or 0)
+end
+
 Remotes.DataSync.OnClientEvent:Connect(function(newData)
 	local first = data == nil
 	data = newData
@@ -1349,5 +1687,8 @@ Remotes.DataSync.OnClientEvent:Connect(function(newData)
 	updateGates()
 	updateVipBarriers()
 	updateMeditation()
+	updateDiamonds()
 	if panel.Visible then refreshPanel() end
+	if rebirthWin.Frame.Visible then refreshRebirth() end
+	if premiumWin.Frame.Visible then refreshPremium() end
 end)

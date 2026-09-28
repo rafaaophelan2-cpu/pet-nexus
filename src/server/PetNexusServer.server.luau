@@ -436,7 +436,7 @@ for _, counter in ipairs(CollectionService:GetTagged("ShopCounter")) do
 	if pp then
 		pp.Triggered:Connect(function(player)
 			if counter:GetAttribute("ShopKind") == "Premium" then
-				notify(player, "La Premium Shop abre muy pronto", Color3.fromRGB(255, 225, 140))
+				return -- el cliente abre la vitrina de la Premium Shop
 			else
 				notify(player, "La tienda abre muy pronto", Color3.fromRGB(255, 190, 230))
 			end
