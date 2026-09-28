@@ -148,20 +148,22 @@ end
 
 local function buildVisual(model, kind, pos, dim)
 	local yaw = CFrame.new(pos) * CFrame.Angles(0, rng:NextNumber(0, math.pi * 2), 0)
+	local set = (Config.BreakableModels and Config.BreakableModels[dim]) or {}
 	if kind == "Coins" then
-		local pile = Assets.Breakables:FindFirstChild(Config.CurrencyOf(dim).Model .. "Pile")
+		local pile = Assets.Breakables:FindFirstChild(set.Coins or (Config.CurrencyOf(dim).Model .. "Pile"))
+			or Assets.Breakables:FindFirstChild("AngelCoinPile")
 		local m = place(pile, yaw, rng:NextNumber(1, 1.25))
 		m.Parent = model
 		local _, sz = m:GetBoundingBox()
 		return sz + Vector3.new(0.4, 0.6, 0.4)
 	end
 	if kind == "Chest" then
-		local m = place(Assets.Breakables.AngelGift, yaw, 1.1)
+		local m = place(Assets.Breakables:FindFirstChild(set.Chest or "AngelGift") or Assets.Breakables.AngelGift, yaw, 1.1)
 		m.Parent = model
 		local _, sz = m:GetBoundingBox()
 		return sz + Vector3.new(0.4, 0.4, 0.4)
 	else
-		local m = place(Assets.Breakables.HeavenChest, yaw, 1.45)
+		local m = place(Assets.Breakables:FindFirstChild(set.GiantChest or "HeavenChest") or Assets.Breakables.HeavenChest, yaw, 1.45)
 		m.Parent = model
 		local pe = Instance.new("ParticleEmitter"); pe.Rate = 8; pe.Lifetime = NumberRange.new(1, 1.8); pe.Speed = NumberRange.new(1, 2.5)
 		pe.Color = ColorSequence.new(Color3.fromRGB(255, 245, 190)); pe.LightEmission = 1; pe.Size = NumberSequence.new(0.45, 0)

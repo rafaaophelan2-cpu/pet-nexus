@@ -79,6 +79,7 @@ local function textSurface(p, face, lines, bg)
 	return sg
 end
 WB.TextSurface = textSurface
+WB.TextSurface = textSurface
 
 ---------------------------------------------------------------- props
 -- Biblioteca de modelos generados (ServerStorage.PetNexusBuild.Props y ReplicatedStorage.PetNexusAssets)
@@ -222,6 +223,7 @@ local function dashedBorder(parent, center, w, l, inset, y)
 	run(c + Vector3.new(-hx, 0, -hz), c + Vector3.new(-hx, 0, hz), false)
 	run(c + Vector3.new(hx, 0, -hz), c + Vector3.new(hx, 0, hz), false)
 end
+WB.DashedBorder = dashedBorder
 
 local function sideIsland(parent, center, sx, sz, grass, rng)
 	part(parent, { Name = "SideTop", Size = Vector3.new(sx, 3, sz), Position = center + Vector3.new(0, -1.5, 0), Color = grass })
@@ -332,7 +334,7 @@ function WB.BuildArea(dim, i)
 	if old then old:Destroy() end
 	local m = Instance.new("Model"); m.Name = "Area_" .. i; m.Parent = worldFolder
 	m:SetAttribute("AreaName", a.Name)
-	local rng = Random.new(i * 7919 + d.Order * 31)
+	local rng = Random.new(i * 7919 + (d.SeedOrder or d.Order) * 31)
 	local c = Config.ZoneCenter(dim, i)
 
 	-- isla principal (camino) y parcela
@@ -417,7 +419,7 @@ function WB.BuildLobby(dim)
 	local old = worldFolder:FindFirstChild("Lobby")
 	if old then old:Destroy() end
 	local m = Instance.new("Model"); m.Name = "Lobby"; m.Parent = worldFolder
-	local rng = Random.new(d.Order * 101)
+	local rng = Random.new((d.SeedOrder or d.Order) * 101)
 	local c = d.LobbyCenter
 	local cyan = Color3.fromRGB(120, 225, 255)
 
@@ -590,7 +592,7 @@ function WB.BuildWorld(dim)
 	WB.BuildLobby(dim)
 	for i = 1, d.AreasBuilt do WB.BuildArea(dim, i) end
 	-- cordilleras que rodean el mundo construido: cada tramo usa las piezas de su zona
-	local rngW = Random.new(d.Order * 977)
+	local rngW = Random.new((d.SeedOrder or d.Order) * 977)
 	local walls = Instance.new("Model"); walls.Name = "Walls"; walls.Parent = workspace.World[dim]
 	local X = 168
 	local zBack = d.LobbyCenter.Z - 215

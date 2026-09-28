@@ -409,6 +409,7 @@ Config.Dimensions = {
 		-- Subirlo a 2 junto con el rebalanceo de huevos/mascotas de Nexus cuando Greenwood esté construido
 		-- (y reconstruir las puertas, que muestran el precio horneado).
 		EconomyOrder = 1,
+		SeedOrder = 1, -- semilla de decoración de WorldBuilder: fija para que Nexus se vea igual al reconstruirlo (antes Order era 1)
 		Origin = Vector3.new(0, 0, 200), -- centro del área 1
 		Forward = Vector3.new(0, 0, 1),
 		LobbyCenter = Vector3.new(0, 0, 40),
@@ -511,6 +512,10 @@ Config.Breakables = {
 	GiantChest = { HP = 300, Reward = 220, Weight = 7,  DiamondChance = 1,    Diamonds = 10, XP = 30 },
 }
 Config.BreakablesPerZone = 22
+-- Modelos de rompibles por mundo (ReplicatedStorage.PetNexusAssets.Breakables). Sin entrada: <Moneda>Pile / AngelGift / HeavenChest.
+Config.BreakableModels = {
+	Greenwood = { Coins = "CoinPile", Chest = "WoodGift", GiantChest = "WoodChest" },
+}
 
 ---------------------------------------------------------------- trazado de los mundos
 -- Áreas 1..TurnArea en línea recta hacia Forward. El área TurnArea es una esquina más grande: el camino gira 90° a la
