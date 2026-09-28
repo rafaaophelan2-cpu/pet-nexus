@@ -20,7 +20,7 @@ local GRASS_SIDE = C(138, 206, 106)
 local SIDEWALK = C(196, 188, 174)
 local CURB = C(160, 150, 140)
 local STONE = C(186, 180, 170)
-local PLAZA = C(214, 198, 164)
+local PLAZA = C(196, 176, 140)
 local GOLD = C(246, 202, 84)
 local WOOD = C(150, 104, 70)
 local WATER = C(96, 176, 230)
@@ -326,7 +326,8 @@ THEMES["Balloon Field"] = function(m, A, rng)
 	local beam = cyl(m, A, "AltarBeam", ax, h + 40, az, 6, 80, C(215, 175, 255), { Material = Enum.Material.Neon, Transparency = 0.75, CanCollide = false, CanQuery = false, CastShadow = false })
 	local sign = box(m, A, "AltarSign", ax, h + 22, az - 16, 30, 5, 0.4, C(255, 255, 255), { Transparency = 1, CanCollide = false, CanQuery = false })
 	sign.CFrame = CFrame.lookAt(sign.Position, localCF(A, 0, h + 22, 0).Position)
-	WB.TextSurface(sign, Enum.NormalId.Front, { { Text = "ALTAR DE MEDITACIÓN", Size = UDim2.fromScale(0.96, 0.8), Pos = UDim2.fromScale(0.02, 0.1), Color = C(230, 205, 255) } })
+	local asg = WB.TextSurface(sign, Enum.NormalId.Front, { { Text = "ALTAR DE MEDITACIÓN", Size = UDim2.fromScale(0.96, 0.8), Pos = UDim2.fromScale(0.02, 0.1), Color = C(230, 205, 255) } })
+	asg.PixelsPerStud = 8
 	bushes(m, A, rng, 4)
 end
 
@@ -406,7 +407,8 @@ local function cornerArea(m, A, d, i, a, rng)
 	end
 	local title = box(m, A, "RebirthTitle", sx, 66, sz, 90, 18, 0.4, C(255, 255, 255), { Transparency = 1, CanCollide = false, CanQuery = false, CastShadow = false })
 	title.CFrame = CFrame.lookAt(title.Position, localCF(A, 0, 66, 0).Position)
-	WB.TextSurface(title, Enum.NormalId.Front, { { Text = "REBIRTH", Size = UDim2.fromScale(0.96, 0.9), Pos = UDim2.fromScale(0.02, 0.05), Color = GOLD, StrokeColor = C(120, 70, 0) } })
+	local tsg = WB.TextSurface(title, Enum.NormalId.Front, { { Text = "REBIRTH", Size = UDim2.fromScale(0.96, 0.9), Pos = UDim2.fromScale(0.02, 0.05), Color = GOLD, StrokeColor = C(120, 70, 0) } })
+	tsg.PixelsPerStud = 4 -- el texto escalado tiene un tope de tamaño: menos píxeles por stud = letras más grandes en el mundo
 	-- piso de honor: anillo dorado y círculo claro bajo las columnas
 	cyl(m, A, "HonorRing", sx, 0.35, sz, 100, 0.2, GOLD, DECO)
 	cyl(m, A, "HonorFloor", sx, 0.4, sz, 94, 0.2, C(238, 226, 196), DECO)
