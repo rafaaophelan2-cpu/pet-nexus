@@ -7,7 +7,7 @@ local lib = RS:WaitForChild("PetNexusAssets")
 
 local Icons = {}
 Icons.DefaultYaw = 180 -- los modelos generados miran a +Z
-Icons.Yaw = { AngelCoin = 180, Power = 180, Rebirth = 270 }
+Icons.Yaw = { AngelCoin = 180, Power = 180, Rebirth = 270, Upgrade = 270, Rank = 270 }
 Icons.Pitch = { Luck = -75 } -- el trébol viene acostado
 Icons.Zoom = { World_Nexus = 1.05, Meditation = 1.1 }
 

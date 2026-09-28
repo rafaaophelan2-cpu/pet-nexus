@@ -1672,6 +1672,336 @@ local function openPremium()
 	premiumWin.Open()
 end
 
+---------------------------------------------------------------- pestañas + lista con scroll (ventanas con secciones)
+local function tabbedBody(win)
+	local tabs = Instance.new("Frame")
+	tabs.Name = "Tabs"
+	tabs.BackgroundTransparency = 1
+	tabs.Size = UDim2.new(1, -40, 0, 50)
+	tabs.Position = UDim2.fromOffset(20, 12)
+	tabs.ZIndex = 31
+	tabs.Parent = win.Body
+	local list = Instance.new("ScrollingFrame")
+	list.Name = "List"
+	list.Size = UDim2.new(1, -30, 1, -80)
+	list.Position = UDim2.fromOffset(15, 70)
+	list.BackgroundTransparency = 1
+	list.BorderSizePixel = 0
+	list.ScrollBarThickness = 6
+	list.AutomaticCanvasSize = Enum.AutomaticSize.Y
+	list.CanvasSize = UDim2.new()
+	list.ZIndex = 31
+	list.Parent = win.Body
+	return tabs, list
+end
+local function drawTabs(tabs, defs, current, onPick)
+	clearGui(tabs)
+	for k, tb in ipairs(defs) do
+		local sel = current == tb[1]
+		local b = button(tabs, { Name = "Tab_" .. tb[1], Text = "", Size = UDim2.fromOffset(180, 46), Position = UDim2.fromOffset((k - 1) * 190, 0), BackgroundColor3 = sel and Color3.fromRGB(200, 120, 255) or Color3.new(1, 1, 1), ZIndex = 32 })
+		if sel then gradient(b, Color3.fromRGB(230, 170, 255), Color3.fromRGB(160, 90, 240)) end
+		local tl = label(b, { Text = tb[2], Size = UDim2.new(1, -10, 1, -12), Position = UDim2.fromOffset(5, 6), TextColor3 = sel and Color3.new(1, 1, 1) or Color3.fromRGB(150, 110, 210), ZIndex = 33 })
+		if not sel then tl.UIStroke.Transparency = 1 end
+		b.MouseButton1Click:Connect(function() onPick(tb[1]) end)
+	end
+end
+local function listLayout(list)
+	clearGui(list)
+	local lay = Instance.new("UIListLayout"); lay.Padding = UDim.new(0, 10); lay.SortOrder = Enum.SortOrder.LayoutOrder; lay.Parent = list
+	local pad = Instance.new("UIPadding"); pad.PaddingTop = UDim.new(0, 4); pad.PaddingLeft = UDim.new(0, 4); pad.PaddingBottom = UDim.new(0, 6); pad.Parent = list
+end
+-- botón de precio con ícono de la moneda (diamantes o moneda del mundo)
+local function priceButton(parent, iconName, amount, pos, size, enabled, onClick)
+	local b = buyButton(parent, "", pos, size, enabled, onClick)
+	Icons.Make(b, iconName, { Size = UDim2.fromOffset(size.Y.Offset - 6, size.Y.Offset - 6), Position = UDim2.fromOffset(6, 3), ZIndex = 36 })
+	label(b, { Text = Config.FormatNumber(amount), Size = UDim2.new(1, -(size.Y.Offset + 8), 1, -12), Position = UDim2.fromOffset(size.Y.Offset + 2, 6), ZIndex = 36 })
+	return b
+end
+local Economy = require(ReplicatedStorage.PetNexus:WaitForChild("Economy"))
+
+---------------------------------------------------------------- MÁQUINA DE MEJORAS (E): pestañas Mejoras / Rango
+local UPG_ICON = { WalkSpeed = "Speed", Diamonds = "Diamond", Luck = "Luck", PetsEquipped = "Power", AutoEnchant = "Premium" }
+local function iconOr(name, fallback) return Assets.Icons:FindFirstChild(name) and name or fallback end
+local upgradeWin = makeWindow("UpgradePanel", "Mejoras", iconOr("Upgrade", "Power"), 860, 580)
+local upgradeTabs, upgradeList = tabbedBody(upgradeWin)
+local upgradeTab, upgradeDim = "Upgrades", nil
+local refreshUpgrades
+local function upgradeValueText(def, entry)
+	if not entry then return "—" end
+	if def.Unlock then return "Desbloquea " .. def.Name end
+	if def.Stat == "MaxEquipped" then return "+" .. entry.Bonus .. " mascota" .. (entry.Bonus == 1 and "" or "s") .. " equipada" .. (entry.Bonus == 1 and "" or "s") end
+	if def.Stat == "WalkSpeed" then return pctText(entry.Bonus) .. " velocidad" end
+	return statLine(def.Stat, entry.Bonus)
+end
+refreshUpgrades = function()
+	if not data or not upgradeDim then return end
+	drawTabs(upgradeTabs, { { "Upgrades", "Mejoras" }, { "Rank", "Rango" } }, upgradeTab, function(id) upgradeTab = id; refreshUpgrades() end)
+	listLayout(upgradeList)
+	upgradeWin.Title.Text = upgradeTab == "Rank" and "Rango" or "Mejoras"
+	if upgradeTab == "Upgrades" then
+		local ids = {}
+		for id, def in pairs(Config.Upgrades) do table.insert(ids, { id, def }) end
+		table.sort(ids, function(a, b) return a[2].Order < b[2].Order end)
+		for i, e in ipairs(ids) do
+			local id, def = e[1], e[2]
+			local dim = def.PerDimension and upgradeDim or nil
+			local lvl = Stats.UpgradeLevel(data, id, dim)
+			local maxL = #def.Levels
+			local c = card(upgradeList, i, 92)
+			local icon = UPG_ICON[id] or (id == "Coins" and Config.CurrencyOf(upgradeDim).Icon) or "Power"
+			Icons.Make(c, iconOr(icon, "Power"), { Size = UDim2.fromOffset(70, 70), Position = UDim2.fromOffset(8, 11), ZIndex = 33 })
+			local name = def.Name .. (def.PerDimension and (" (" .. Config.CurrencyOf(upgradeDim).Name .. ")") or "")
+			label(c, { Text = name, Size = UDim2.fromOffset(380, 30), Position = UDim2.fromOffset(88, 8), TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 33 })
+			-- barra de niveles (una píldora por nivel)
+			for k = 1, maxL do
+				local pill = Instance.new("Frame")
+				pill.Size = UDim2.fromOffset(math.min(44, 176 / maxL), 10)
+				pill.Position = UDim2.fromOffset(90 + (k - 1) * (math.min(44, 176 / maxL) + 4), 44)
+				pill.BackgroundColor3 = k <= lvl and Color3.fromRGB(110, 220, 110) or Color3.fromRGB(215, 210, 230)
+				pill.ZIndex = 33; pill.Parent = c
+				round(pill, UDim.new(1, 0))
+			end
+			local now = upgradeValueText(def, def.Levels[lvl])
+			local nextE = def.Levels[lvl + 1]
+			subText(c, { Text = (lvl == 0 and "Sin comprar" or now) .. (nextE and ("   >   " .. upgradeValueText(def, nextE)) or ""), Size = UDim2.fromOffset(470, 22), Position = UDim2.fromOffset(88, 60), TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = Color3.fromRGB(120, 110, 150), ZIndex = 33 })
+			if nextE then
+				local price, currency, curDim = Economy.UpgradeCost(id, lvl + 1, dim)
+				local have = Economy.Balance(data, currency, curDim)
+				local iconName = currency == "Diamonds" and "Diamond" or Config.CurrencyOf(curDim).Icon
+				priceButton(c, iconName, price, UDim2.new(1, -190, 0.5, -24), UDim2.fromOffset(170, 48), have >= price, function()
+					Remotes.BuyUpgrade:FireServer(id, lvl + 1, dim)
+				end)
+			else
+				buyButton(c, "MAX", UDim2.new(1, -190, 0.5, -24), UDim2.fromOffset(170, 48), false, function() end)
+			end
+		end
+	else
+		local unlocked = Stats.RankUnlocked(data)
+		local rank = Stats.Rank(data)
+		local head = card(upgradeList, 0, 84)
+		head.BackgroundColor3 = Color3.fromRGB(255, 244, 220)
+		Icons.Make(head, iconOr("Rank", "Premium"), { Size = UDim2.fromOffset(70, 70), Position = UDim2.fromOffset(8, 7), ZIndex = 33 })
+		if not unlocked then
+			label(head, { Text = "Rango bloqueado", Size = UDim2.fromOffset(500, 32), Position = UDim2.fromOffset(88, 8), TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = Color3.fromRGB(230, 150, 30), ZIndex = 33 })
+			subText(head, { Text = "Haz el Rebirth 1 (estatua dorada al final del área 10) para desbloquear el Rango.", Size = UDim2.fromOffset(620, 40), Position = UDim2.fromOffset(88, 44), TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = Color3.fromRGB(120, 110, 150), ZIndex = 33 })
+		else
+			local cur = Config.Ranks.Levels[rank]
+			label(head, { Text = rank == 0 and "Sin rango" or ("Rango " .. rank), Size = UDim2.fromOffset(500, 32), Position = UDim2.fromOffset(88, 8), TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = Color3.fromRGB(230, 150, 30), ZIndex = 33 })
+			subText(head, { Text = cur and (pctText(cur.Bonus) .. " Coins y Diamantes (todos los mundos)") or "Sube de rango con diamantes para ganar más Coins y Diamantes", Size = UDim2.fromOffset(620, 24), Position = UDim2.fromOffset(88, 46), TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = Color3.fromRGB(120, 110, 150), ZIndex = 33 })
+		end
+		for r, entry in ipairs(Config.Ranks.Levels) do
+			local c = card(upgradeList, r, 70)
+			local owned = unlocked and r <= rank
+			local isNext = unlocked and r == rank + 1
+			c.BackgroundColor3 = owned and Color3.fromRGB(230, 250, 225) or (isNext and Color3.fromRGB(248, 244, 255) or Color3.fromRGB(236, 234, 242))
+			local badge = label(c, { Text = tostring(r), Size = UDim2.fromOffset(50, 50), Position = UDim2.fromOffset(12, 10), ZIndex = 34 })
+			local bg = Instance.new("Frame"); bg.Size = UDim2.fromOffset(54, 54); bg.Position = UDim2.fromOffset(10, 8); bg.ZIndex = 33; bg.Parent = c
+			bg.BackgroundColor3 = owned and Color3.fromRGB(110, 210, 110) or (isNext and Color3.fromRGB(255, 200, 70) or Color3.fromRGB(190, 186, 205))
+			round(bg, UDim.new(1, 0)); stroke(bg, 3)
+			badge.ZIndex = 34
+			label(c, { Text = "Rango " .. r .. "   " .. pctText(entry.Bonus) .. " Coins y Diamantes", Size = UDim2.fromOffset(420, 30), Position = UDim2.fromOffset(78, 20), TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = (owned or isNext) and Color3.new(1, 1, 1) or Color3.fromRGB(235, 232, 245), ZIndex = 33 })
+			if owned then
+				buyButton(c, "LISTO", UDim2.new(1, -150, 0.5, -21), UDim2.fromOffset(130, 42), false, function() end)
+			elseif isNext then
+				priceButton(c, "Diamond", entry.Cost, UDim2.new(1, -306, 0.5, -21), UDim2.fromOffset(150, 42), (data.Diamonds or 0) >= entry.Cost, function()
+					Remotes.BuyRank:FireServer(r)
+				end)
+				local pd = Config.Products["RankSkip" .. r]
+				if pd then
+					local rb = buyButton(c, robux(pd.Price), UDim2.new(1, -150, 0.5, -21), UDim2.fromOffset(130, 42), true, function() Remotes.PromptProduct:FireServer("RankSkip" .. r) end)
+					rb.BackgroundColor3 = Color3.fromRGB(120, 200, 255)
+					local g = rb:FindFirstChildOfClass("UIGradient"); if g then g:Destroy() end
+					gradient(rb, Color3.fromRGB(150, 225, 255), Color3.fromRGB(60, 150, 240))
+				end
+			end
+		end
+	end
+end
+local function openUpgrades(dim, tab)
+	upgradeDim = Config.Dimensions[dim] and dim or currentWorld()
+	upgradeTab = tab or "Upgrades"
+	refreshUpgrades()
+	upgradeWin.Open()
+end
+
+---------------------------------------------------------------- POCIONES: botón en el HUD, ventana de inventario y temporizadores activos
+local potionSync = os.clock()
+local function potionLeft(id)
+	if not data then return 0 end
+	return math.max(0, Stats.PotionRemaining(data, id) - (os.clock() - potionSync))
+end
+local function longClock(s)
+	s = math.max(0, math.ceil(s))
+	if s >= 3600 then return string.format("%d:%02d:%02d", math.floor(s / 3600), math.floor(s / 60) % 60, s % 60) end
+	return clockText(s)
+end
+local potionTypes = {}
+for id, def in pairs(Config.Potions.Types) do table.insert(potionTypes, { id, def }) end
+table.sort(potionTypes, function(a, b) return a[2].Order < b[2].Order end)
+
+local potionButton = Instance.new("TextButton")
+potionButton.Name = "PotionButton"
+potionButton.Text = ""
+potionButton.Size = UDim2.fromOffset(86, 86)
+potionButton.Position = UDim2.new(0, 118, 0.5, 86)
+potionButton.BackgroundColor3 = Color3.fromRGB(255, 130, 200)
+potionButton.Parent = gui
+round(potionButton, UDim.new(0, 22)); stroke(potionButton, 3, Color3.new(1, 1, 1), 0.3)
+gradient(potionButton, Color3.fromRGB(255, 175, 225), Color3.fromRGB(235, 80, 170))
+local potionBtnIcon = Icons.Make(potionButton, "Potion_Luck", { Size = UDim2.fromOffset(62, 62), AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromOffset(43, 34) })
+label(potionButton, { Text = "POCIONES", Size = UDim2.new(1, -10, 0, 16), Position = UDim2.fromOffset(5, 66) })
+local potionCount = label(potionButton, { Text = "", Size = UDim2.fromOffset(34, 26), AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(1, -4, 0, 4), BackgroundTransparency = 0, BackgroundColor3 = Color3.fromRGB(255, 70, 100), ZIndex = 4, Visible = false })
+round(potionCount, UDim.new(1, 0))
+potionButton.MouseEnter:Connect(function() TweenService:Create(potionBtnIcon, TweenInfo.new(0.15), { Size = UDim2.fromOffset(70, 70) }):Play() end)
+potionButton.MouseLeave:Connect(function() TweenService:Create(potionBtnIcon, TweenInfo.new(0.15), { Size = UDim2.fromOffset(62, 62) }):Play() end)
+do
+	local t0 = os.clock()
+	RunService.RenderStepped:Connect(function()
+		potionBtnIcon.Rotation = math.sin((os.clock() - t0) * 2) * 8
+	end)
+end
+
+local potionWin = makeWindow("PotionPanel", "Pociones", "Potion_Luck", 760, 560)
+local potionBody = potionWin.Body
+local refreshPotions
+refreshPotions = function()
+	if not data then return end
+	clearGui(potionBody)
+	for i, t in ipairs(potionTypes) do
+		local id, def = t[1], t[2]
+		local c = Instance.new("Frame")
+		c.Size = UDim2.new(1, -40, 0, 92)
+		c.Position = UDim2.fromOffset(20, 16 + (i - 1) * 102)
+		c.BackgroundColor3 = Color3.fromRGB(248, 244, 255)
+		c.ZIndex = 32; c.Parent = potionBody
+		round(c, UDim.new(0, 18)); stroke(c, 3)
+		Icons.Make(c, "Potion_" .. id, { Size = UDim2.fromOffset(74, 74), Position = UDim2.fromOffset(8, 9), ZIndex = 33 })
+		local have = data.Potions and data.Potions[id] or 0
+		label(c, { Text = def.Name, Size = UDim2.fromOffset(330, 30), Position = UDim2.fromOffset(92, 10), TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 33 })
+		subText(c, { Text = statLine(def.Stat, def.Bonus) .. " · " .. math.floor(Config.Potions.Duration / 60) .. " min cada una", Size = UDim2.fromOffset(330, 22), Position = UDim2.fromOffset(92, 44), TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = Color3.fromRGB(120, 110, 150), ZIndex = 33 })
+		local left = potionLeft(id)
+		local st = subText(c, { Name = "Active", Text = left > 0 and ("Activa: " .. longClock(left)) or "", Size = UDim2.fromOffset(330, 22), Position = UDim2.fromOffset(92, 66), TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = Color3.fromRGB(60, 170, 80), ZIndex = 33 })
+		st:SetAttribute("Potion", id)
+		local cnt = label(c, { Text = "x" .. have, Size = UDim2.fromOffset(80, 36), Position = UDim2.new(1, -330, 0.5, -18), TextColor3 = have > 0 and Color3.fromRGB(255, 220, 90) or Color3.fromRGB(200, 196, 214), ZIndex = 33 })
+		cnt.TextXAlignment = Enum.TextXAlignment.Right
+		buyButton(c, "USAR", UDim2.new(1, -236, 0.5, -24), UDim2.fromOffset(110, 48), have > 0, function()
+			Remotes.UsePotion:FireServer(id)
+		end)
+		local more = buyButton(c, "MÁS", UDim2.new(1, -116, 0.5, -24), UDim2.fromOffset(100, 48), true, function()
+			premiumTab = "Potions"; refreshPremium(); premiumWin.Open()
+		end)
+		local g = more:FindFirstChildOfClass("UIGradient"); if g then g:Destroy() end
+		gradient(more, Color3.fromRGB(230, 170, 255), Color3.fromRGB(160, 90, 240))
+	end
+end
+potionButton.MouseButton1Click:Connect(function()
+	if potionWin.Frame.Visible then potionWin.Close() return end
+	refreshPotions(); potionWin.Open()
+end)
+
+-- temporizadores de pociones activas (arriba a la derecha)
+local activeBar = Instance.new("Frame")
+activeBar.Name = "ActivePotions"
+activeBar.BackgroundTransparency = 1
+activeBar.AnchorPoint = Vector2.new(1, 0)
+activeBar.Size = UDim2.fromOffset(520, 56)
+activeBar.Position = UDim2.new(1, -16, 0, 12)
+activeBar.Parent = gui
+local activeLayout = Instance.new("UIListLayout"); activeLayout.FillDirection = Enum.FillDirection.Horizontal; activeLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right; activeLayout.Padding = UDim.new(0, 8); activeLayout.SortOrder = Enum.SortOrder.LayoutOrder; activeLayout.Parent = activeBar
+local activeChips = {}
+for i, t in ipairs(potionTypes) do
+	local id = t[1]
+	local chip = glass(activeBar, { Name = id, LayoutOrder = i, Size = UDim2.fromOffset(122, 48), Visible = false })
+	Icons.Make(chip, "Potion_" .. id, { Size = UDim2.fromOffset(50, 50), Position = UDim2.fromOffset(-6, -2), ZIndex = 3 })
+	local tl = label(chip, { Text = "0:00", Size = UDim2.new(1, -52, 0, 30), Position = UDim2.fromOffset(44, 9), TextXAlignment = Enum.TextXAlignment.Left })
+	activeChips[id] = { Chip = chip, Text = tl }
+end
+task.spawn(function()
+	while gui.Parent do
+		local total = 0
+		for _, t in ipairs(potionTypes) do
+			local id = t[1]
+			local left = potionLeft(id)
+			local ch = activeChips[id]
+			ch.Chip.Visible = left > 0
+			if left > 0 then ch.Text.Text = longClock(left) end
+			total += data and data.Potions and (data.Potions[id] or 0) or 0
+		end
+		potionCount.Visible = total > 0
+		potionCount.Text = total > 99 and "99+" or tostring(total)
+		if potionWin.Frame.Visible then
+			for _, d in ipairs(potionBody:GetDescendants()) do
+				local id = d:GetAttribute("Potion")
+				if id then
+					local left = potionLeft(id)
+					d.Text = left > 0 and ("Activa: " .. longClock(left)) or ""
+				end
+			end
+		end
+		task.wait(0.5)
+	end
+end)
+
+---------------------------------------------------------------- botón de recarga de Esencia (solo durante la recarga): saltar con Robux o misiones
+local essSkip = button(hud, { Name = "EssenceSkip", Text = "", Size = UDim2.fromOffset(44, 44), Position = UDim2.fromOffset(242, -62), BackgroundColor3 = Color3.fromRGB(190, 140, 255), Visible = false, ZIndex = 3 })
+gradient(essSkip, Color3.fromRGB(225, 190, 255), Color3.fromRGB(150, 90, 240))
+label(essSkip, { Text = ">>", Size = UDim2.new(1, -10, 1, -14), Position = UDim2.fromOffset(5, 7), ZIndex = 4 })
+local essWin = makeWindow("EssenceSkipPanel", "Recarga", "Meditation", 620, 400)
+local refreshEss
+refreshEss = function()
+	clearGui(essWin.Body)
+	local _, left = medNow()
+	label(essWin.Body, { Text = "Tu Zona de Meditación se está recargando", Size = UDim2.new(1, -40, 0, 30), Position = UDim2.fromOffset(20, 18), TextColor3 = MED_PURPLE, ZIndex = 31 })
+	local tl = label(essWin.Body, { Name = "Left", Text = "Faltan " .. clockText(left), Size = UDim2.new(1, -40, 0, 44), Position = UDim2.fromOffset(20, 56), ZIndex = 31 })
+	tl:SetAttribute("EssLeft", true)
+	local pd = Config.Products.EssenceCooldownSkip
+	local sk = buyButton(essWin.Body, pd and ("SALTAR  " .. robux(pd.Price)) or "SALTAR CON ROBUX (PRONTO)", UDim2.new(0.5, -200, 0, 124), UDim2.fromOffset(400, 64), pd ~= nil, function()
+		Remotes.PromptProduct:FireServer("EssenceCooldownSkip")
+	end)
+	sk.ZIndex = 34
+	local ms = buyButton(essWin.Body, "MISIONES (PRONTO)", UDim2.new(0.5, -200, 0, 204), UDim2.fromOffset(400, 64), false, function() end)
+	ms.ZIndex = 34
+	subText(essWin.Body, { Text = "Completa misiones para saltar 15 minutos de la recarga.", Size = UDim2.new(1, -60, 0, 24), Position = UDim2.fromOffset(30, 282), TextColor3 = Color3.fromRGB(120, 110, 150), ZIndex = 31 })
+end
+essSkip.MouseButton1Click:Connect(function() refreshEss(); essWin.Open() end)
+task.spawn(function()
+	while gui.Parent do
+		local status, left = medNow()
+		local cd = status == "cooldown" and left > 0
+		essSkip.Visible = cd and essRow.Visible
+		if essWin.Frame.Visible then
+			if not cd then essWin.Close() else
+				for _, d in ipairs(essWin.Body:GetChildren()) do
+					if d:GetAttribute("EssLeft") then d.Text = "Faltan " .. clockText(left) end
+				end
+			end
+		end
+		task.wait(0.5)
+	end
+end)
+
+---------------------------------------------------------------- subida de nivel de mascotas y rango (aviso)
+Remotes:WaitForChild("PetLevelUp").OnClientEvent:Connect(function(list)
+	if typeof(list) ~= "table" or #list == 0 then return end
+	local e = list[#list]
+	local pet = data and Economy.FindPet(data, e.PetId)
+	local name = pet and Config.PetName(pet.Name) or "Tu mascota"
+	if e.Level >= Config.PetLevels.MaxLevel then
+		notify(name .. " llegó al nivel MAX", Color3.fromRGB(255, 215, 90))
+	else
+		notify(name .. " subió a nivel " .. e.Level .. (#list > 1 and ("  (+" .. (#list - 1) .. " más)") or ""), Color3.fromRGB(150, 235, 160))
+	end
+end)
+Remotes:WaitForChild("RankResult").OnClientEvent:Connect(function(rank)
+	local holder = Instance.new("Frame"); holder.BackgroundTransparency = 1; holder.Size = UDim2.fromScale(1, 1); holder.ZIndex = 60; holder.Parent = gui
+	fx_rays(holder, Color3.fromRGB(255, 215, 90), 61, 420)
+	local big = label(holder, { Text = "¡RANGO " .. rank .. "!", Size = UDim2.fromOffset(600, 80), AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.3), ZIndex = 63 })
+	gradient(big, Color3.fromRGB(255, 250, 200), Color3.fromRGB(255, 180, 40))
+	big.UIStroke.Thickness = 6
+	fx_confetti(holder, 40, 62)
+	task.delay(2.5, function() holder:Destroy() end)
+end)
+
 ---------------------------------------------------------------- prompts del mapa (E): estatua de Rebirth, Premium Shop, pociones gratis, globo
 ProximityPromptService.PromptTriggered:Connect(function(prompt)
 	local part = prompt.Parent
@@ -1680,6 +2010,8 @@ ProximityPromptService.PromptTriggered:Connect(function(prompt)
 		openRebirth(part:GetAttribute("Dimension"))
 	elseif CollectionService:HasTag(part, "ShopCounter") and part:GetAttribute("ShopKind") == "Premium" then
 		openPremium()
+	elseif CollectionService:HasTag(part, "UpgradeMachine") then
+		openUpgrades(part:GetAttribute("Dimension"))
 	elseif CollectionService:HasTag(part, "PotionShrine") then
 		Remotes.ClaimFreePotions:FireServer()
 	elseif CollectionService:HasTag(part, "WorldVehicle") then
@@ -1703,4 +2035,7 @@ Remotes.DataSync.OnClientEvent:Connect(function(newData)
 	if panel.Visible then refreshPanel() end
 	if rebirthWin.Frame.Visible then refreshRebirth() end
 	if premiumWin.Frame.Visible then refreshPremium() end
+	potionSync = os.clock()
+	if upgradeWin.Frame.Visible then refreshUpgrades() end
+	if potionWin.Frame.Visible then refreshPotions() end
 end)
