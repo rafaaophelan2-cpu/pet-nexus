@@ -609,8 +609,8 @@ function WB.BuildWorld(dim)
 	-- barreras invisibles (el jugador no llega a las montañas)
 	local zMid = (zBack + zEnd) / 2
 	local zLen = zEnd - zBack + 40
-	barrier(walls, Vector3.new(-124, 60, zMid), Vector3.new(4, 140, zLen))
-	barrier(walls, Vector3.new(124, 60, zMid), Vector3.new(4, 140, zLen))
+	barrier(walls, Vector3.new(-118, 60, zMid), Vector3.new(4, 160, zLen)) -- justo en el borde de las islas laterales: no hay caída al vacío
+	barrier(walls, Vector3.new(118, 60, zMid), Vector3.new(4, 160, zLen))
 	barrier(walls, Vector3.new(0, 60, d.LobbyCenter.Z - 205), Vector3.new(260, 140, 4))
 	barrier(walls, Vector3.new(0, 60, zEnd + 4), Vector3.new(260, 140, 4))
 	local eggs = Instance.new("Model"); eggs.Name = "Eggs"; eggs.Parent = workspace.World[dim]
