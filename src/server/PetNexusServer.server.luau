@@ -470,6 +470,12 @@ local function inMeditationZone(player)
 	return false
 end
 
+-- Multiplicador de Esencia del jugador. Por ahora siempre x1 (Config.Meditation.BaseMultiplier).
+-- Aquí se sumarán los bonus de las mascotas equipadas cuando existan (leer data.Pets equipadas).
+local function essenceMultiplier(player, data)
+	return Med.BaseMultiplier or 1
+end
+
 task.spawn(function()
 	local capSeconds = Med.Cap * Med.SecondsPerEssence
 	while true do
@@ -479,6 +485,7 @@ task.spawn(function()
 			if data then
 				local m = data.Meditation
 				local inside = inMeditationZone(player)
+				local mult = essenceMultiplier(player, data)
 				if m.Cooldown > 0 then
 					m.Cooldown = math.max(0, m.Cooldown - dt)
 					if m.Cooldown == 0 then
@@ -494,13 +501,14 @@ task.spawn(function()
 						notify(player, "¡Tope de Esencia! La meditación se recarga en " .. math.floor(Med.Cooldown / 60) .. " min de juego", Color3.fromRGB(215, 175, 255))
 					end
 					if gained > 0 then
-						data.Essence += gained
+						data.Essence += gained * mult
 						sync(player)
 					end
 				end
 				player:SetAttribute("Meditating", inside)
 				player:SetAttribute("MeditationProgress", math.floor(m.Progress))
 				player:SetAttribute("MeditationCooldown", math.ceil(m.Cooldown))
+				player:SetAttribute("EssenceMultiplier", mult)
 			end
 		end
 	end

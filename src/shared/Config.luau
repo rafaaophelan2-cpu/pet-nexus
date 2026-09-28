@@ -74,8 +74,9 @@ Config.Machines = {
 -- Tope de 15 min: Roblox expulsa tras 20 min sin input, así el ciclo se puede completar 100% AFK.
 Config.Meditation = {
 	SecondsPerEssence = 60, -- 1 Esencia por minuto dentro de la zona
-	Cap = 15,               -- tope por ciclo (15 Esencia = 15 min AFK)
-	Cooldown = 3600,        -- recarga al llegar al tope: 1 h que solo avanza mientras el jugador está conectado
+	Cap = 15,               -- tope por ciclo (15 min de meditación)
+	Cooldown = 1800,        -- recarga al llegar al tope: 30 min que solo avanzan mientras el jugador está conectado
+	BaseMultiplier = 1,     -- multiplicador de Esencia por defecto (x1); las mascotas lo subirán (ver essenceMultiplier en el servidor)
 }
 
 -- Orden de mundos (menú de TP). Solo los que están en Config.Dimensions son jugables.

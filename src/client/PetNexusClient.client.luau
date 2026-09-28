@@ -125,42 +125,184 @@ local essText = label(essRow, { Text = "0", Size = UDim2.new(1, -60, 0, 36), Pos
 gradient(essText, Color3.fromRGB(255, 255, 255), MED_PURPLE)
 local essHead = label(essRow, { Text = "ESENCIA", Size = UDim2.fromOffset(200, 16), Position = UDim2.fromOffset(42, -10), TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = MED_PURPLE })
 
-local medBar = glass(gui, { Size = UDim2.fromOffset(400, 58), Position = UDim2.new(0.5, -200, 1, -150), Visible = false })
-local medTitle = label(medBar, { Text = "", Size = UDim2.new(1, -40, 0, 24), Position = UDim2.fromOffset(20, 5) })
-local medBg = Instance.new("Frame"); medBg.Size = UDim2.new(1, -60, 0, 14); medBg.Position = UDim2.fromOffset(30, 34)
-medBg.BackgroundColor3 = Color3.fromRGB(35, 28, 64); medBg.BackgroundTransparency = 0.2; medBg.Parent = medBar
-round(medBg, UDim.new(1, 0)); stroke(medBg, 1.5, Color3.new(1, 1, 1), 0.2)
-local medFill = Instance.new("Frame"); medFill.Size = UDim2.fromScale(0, 1); medFill.BackgroundColor3 = Color3.new(1, 1, 1); medFill.Parent = medBg
-round(medFill, UDim.new(1, 0))
-gradient(medFill, Color3.fromRGB(255, 200, 250), Color3.fromRGB(165, 120, 255), 0)
-
 local function clockText(s)
-	s = math.max(0, math.floor(s))
+	s = math.max(0, math.ceil(s))
 	return string.format("%d:%02d", math.floor(s / 60), s % 60)
 end
+local function multText(m)
+	return (m % 1 == 0) and string.format("%d", m) or string.format("%.1f", m)
+end
 
-local function updateMeditation()
+-- estado de la meditación: llega del servidor cada 1 s; el cliente interpola entre ticks para que la barra baje suave
+local medState = { inside = false, prog = 0, cd = 0, mult = 1, stamp = os.clock() }
+local function medNow()
 	local med = Config.Meditation
-	local inside = player:GetAttribute("Meditating") == true
-	local prog = player:GetAttribute("MeditationProgress") or 0
-	local cd = player:GetAttribute("MeditationCooldown") or 0
-	local essence = data and data.Essence or 0
-	essRow.Visible = essence > 0 or inside or cd > 0
-	essIcon.Visible = essRow.Visible
-	essText.Text = Config.FormatNumber(essence)
-	essHead.Text = cd > 0 and ("ESENCIA · RECARGA " .. clockText(cd)) or "ESENCIA"
-	medBar.Visible = inside
-	if cd > 0 then
-		medTitle.Text = "Meditación en recarga: " .. clockText(cd)
-		medFill.BackgroundColor3 = Color3.fromRGB(170, 165, 190)
-		medFill.Size = UDim2.fromScale(math.clamp(1 - cd / med.Cooldown, 0, 1), 1)
+	local cap = med.Cap * med.SecondsPerEssence
+	local t = os.clock() - medState.stamp
+	if medState.cd > 0 then return "cooldown", math.max(0, medState.cd - t), cap end
+	local prog = medState.prog
+	if medState.inside then prog = math.min(cap, prog + math.min(t, 1.2)) end
+	return "active", prog, cap
+end
+
+-- pop-up al entrar/salir de la Zona de Meditación (multiplicador de Esencia)
+local medPop = glass(gui, { Name = "MeditationPopup", AnchorPoint = Vector2.new(1, 0.5), Size = UDim2.fromOffset(300, 132), Position = UDim2.new(1, -28, 0.5, -40), Visible = false })
+medPop:FindFirstChildOfClass("UICorner").CornerRadius = UDim.new(0, 30)
+local popScale = Instance.new("UIScale"); popScale.Parent = medPop
+Icons.Make(medPop, "Meditation", { Size = UDim2.fromOffset(92, 92), Position = UDim2.fromOffset(-30, 20), ZIndex = 3 })
+label(medPop, { Text = "ZONA DE MEDITACIÓN", Size = UDim2.fromOffset(206, 22), Position = UDim2.fromOffset(74, 12), TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = MED_PURPLE })
+label(medPop, { Text = "Multiplicador de Esencia", Size = UDim2.fromOffset(206, 17), Position = UDim2.fromOffset(74, 36), TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = Color3.fromRGB(235, 230, 255) })
+local popMult = label(medPop, { Text = "x1", Size = UDim2.fromOffset(150, 50), Position = UDim2.fromOffset(74, 53), TextXAlignment = Enum.TextXAlignment.Left })
+gradient(popMult, Color3.fromRGB(255, 250, 190), Color3.fromRGB(255, 185, 55))
+local popMultScale = Instance.new("UIScale"); popMultScale.Parent = popMult
+local popRate = label(medPop, { Text = "", Size = UDim2.fromOffset(206, 18), Position = UDim2.fromOffset(74, 104), TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = Color3.fromRGB(190, 255, 170) })
+
+local POP_IN = UDim2.new(1, -28, 0.5, -40)
+local POP_OUT = UDim2.new(1, 60, 0.5, -40)
+local popShown = false
+local popTweens = {}
+local function stopPop() for _, t in ipairs(popTweens) do t:Cancel() end; popTweens = {} end
+local function playPop(obj, info, props) local t = TweenService:Create(obj, info, props); t:Play(); table.insert(popTweens, t); return t end
+local function setPopup(show)
+	if show == popShown then return end
+	popShown = show
+	stopPop()
+	if show then
+		medPop.Visible = true
+		popScale.Scale = 0.35; medPop.Position = POP_OUT; medPop.Rotation = 8
+		playPop(popScale, TweenInfo.new(0.55, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 })
+		playPop(medPop, TweenInfo.new(0.45, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), { Position = POP_IN, Rotation = 0 })
+		popMultScale.Scale = 0.2
+		task.delay(0.22, function()
+			if popShown then playPop(popMultScale, TweenInfo.new(0.5, Enum.EasingStyle.Elastic, Enum.EasingDirection.Out), { Scale = 1 }) end
+		end)
+		-- anillo de luz que se expande detrás de la tarjeta
+		local ring = Instance.new("Frame")
+		ring.AnchorPoint = Vector2.new(0.5, 0.5); ring.BackgroundTransparency = 1
+		ring.Position = UDim2.new(1, -178, 0.5, -40); ring.Size = UDim2.fromOffset(300, 132)
+		round(ring, UDim.new(0, 34))
+		local rs = stroke(ring, 5, MED_PURPLE, 0)
+		ring.Parent = gui
+		TweenService:Create(ring, TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Size = UDim2.fromOffset(380, 200) }):Play()
+		local fade = TweenService:Create(rs, TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Transparency = 1, Thickness = 1 })
+		fade:Play()
+		fade.Completed:Connect(function() ring:Destroy() end)
 	else
-		medTitle.Text = "Meditando: " .. math.floor(prog / med.SecondsPerEssence) .. " / " .. med.Cap .. " Esencia"
-		medFill.BackgroundColor3 = Color3.new(1, 1, 1)
-		medFill.Size = UDim2.fromScale(math.clamp(prog / (med.Cap * med.SecondsPerEssence), 0, 1), 1)
+		playPop(medPop, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { Position = POP_OUT, Rotation = -6 })
+		local t = playPop(popScale, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.In), { Scale = 0 })
+		t.Completed:Connect(function(state)
+			if state == Enum.PlaybackState.Completed and not popShown then medPop.Visible = false end
+		end)
 	end
 end
-for _, attr in ipairs({ "Meditating", "MeditationProgress", "MeditationCooldown" }) do
+
+-- barra estilo "boss" flotando sobre cada Zona de Meditación: tiempo que QUEDA del ciclo, verde y vaciándose
+local GREEN = ColorSequence.new(Color3.fromRGB(175, 255, 120), Color3.fromRGB(35, 185, 85))
+local RECHARGE = ColorSequence.new(Color3.fromRGB(220, 205, 255), Color3.fromRGB(130, 105, 210))
+local medBars = {}
+local function makeMedBar(zone)
+	if medBars[zone] or not zone:IsA("BasePart") then return end
+	local bb = Instance.new("BillboardGui")
+	bb.Name = "MeditationBossBar"
+	bb.Adornee = zone
+	bb.Size = UDim2.fromOffset(540, 112)
+	bb.StudsOffset = Vector3.new(0, zone.Size.Y / 2 + 7, 0)
+	bb.MaxDistance = 170
+	bb.LightInfluence = 0
+	bb.ResetOnSpawn = false
+	local title = label(bb, { Text = "ZONA DE MEDITACIÓN", Size = UDim2.new(1, 0, 0, 22), TextColor3 = MED_PURPLE })
+	local timer = label(bb, { Text = "", Size = UDim2.new(1, 0, 0, 42), Position = UDim2.fromOffset(0, 22) })
+	gradient(timer, Color3.fromRGB(255, 255, 255), Color3.fromRGB(215, 240, 255))
+	local frame = Instance.new("Frame")
+	frame.Size = UDim2.new(1, -40, 0, 38); frame.Position = UDim2.fromOffset(40, 68)
+	frame.BackgroundColor3 = Color3.fromRGB(24, 17, 48); frame.BackgroundTransparency = 0.08
+	round(frame, UDim.new(0, 12)); stroke(frame, 4)
+	frame.Parent = bb
+	local inner = Instance.new("Frame")
+	inner.BackgroundTransparency = 1; inner.Size = UDim2.new(1, -8, 1, -8); inner.Position = UDim2.fromOffset(4, 4); inner.ClipsDescendants = true
+	inner.Parent = frame
+	local fill = Instance.new("Frame")
+	fill.Size = UDim2.fromScale(1, 1); fill.BackgroundColor3 = Color3.new(1, 1, 1); fill.BorderSizePixel = 0
+	round(fill, UDim.new(0, 9))
+	local fillGrad = Instance.new("UIGradient"); fillGrad.Color = GREEN; fillGrad.Rotation = 90; fillGrad.Parent = fill
+	fill.Parent = inner
+	local gloss = Instance.new("Frame")
+	gloss.Size = UDim2.new(1, -6, 0.42, 0); gloss.Position = UDim2.fromOffset(3, 2)
+	gloss.BackgroundColor3 = Color3.new(1, 1, 1); gloss.BackgroundTransparency = 0.62; gloss.BorderSizePixel = 0
+	round(gloss, UDim.new(0, 8)); gloss.Parent = fill
+	-- brillo que recorre la barra
+	local shine = Instance.new("Frame")
+	shine.Size = UDim2.fromScale(1, 1); shine.BackgroundColor3 = Color3.new(1, 1, 1); shine.BackgroundTransparency = 0; shine.BorderSizePixel = 0
+	local shineGrad = Instance.new("UIGradient")
+	shineGrad.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.42, 1), NumberSequenceKeypoint.new(0.5, 0.55), NumberSequenceKeypoint.new(0.58, 1), NumberSequenceKeypoint.new(1, 1) })
+	shineGrad.Rotation = 20; shineGrad.Parent = shine
+	round(shine, UDim.new(0, 9)); shine.Parent = fill
+	-- una marca por cada minuto del ciclo (estilo barra de jefe segmentada)
+	local ticks = Config.Meditation.Cap
+	for i = 1, ticks - 1 do
+		local tk = Instance.new("Frame")
+		tk.Size = UDim2.new(0, 2, 1, 0); tk.Position = UDim2.new(i / ticks, -1, 0, 0)
+		tk.BackgroundColor3 = Color3.fromRGB(24, 17, 48); tk.BackgroundTransparency = 0.55; tk.BorderSizePixel = 0; tk.ZIndex = 3
+		tk.Parent = inner
+	end
+	Icons.Make(bb, "Meditation", { Size = UDim2.fromOffset(78, 78), Position = UDim2.fromOffset(-4, 48), ZIndex = 4 })
+	bb.Parent = player:WaitForChild("PlayerGui")
+	medBars[zone] = { bb = bb, title = title, timer = timer, fill = fill, grad = fillGrad, shine = shineGrad, mode = "active" }
+	zone.AncestryChanged:Connect(function(_, parent)
+		if not parent then bb:Destroy(); medBars[zone] = nil end
+	end)
+end
+for _, z in ipairs(CollectionService:GetTagged("MeditationZone")) do task.spawn(makeMedBar, z) end
+CollectionService:GetInstanceAddedSignal("MeditationZone"):Connect(makeMedBar)
+
+RunService.RenderStepped:Connect(function()
+	if not next(medBars) and not popShown then return end
+	local med = Config.Meditation
+	local mode, v, cap = medNow()
+	local frac, timerText, titleText
+	if mode == "cooldown" then
+		frac = 1 - v / med.Cooldown
+		timerText = "RECARGA  " .. clockText(v)
+		titleText = "LA MEDITACIÓN SE ESTÁ RECARGANDO"
+	else
+		local remaining = cap - v
+		frac = remaining / cap
+		timerText = "QUEDAN  " .. clockText(remaining)
+		titleText = medState.inside and "MEDITANDO..." or "ZONA DE MEDITACIÓN"
+	end
+	local shineOffset = ((os.clock() * 0.45) % 1.6) - 0.8
+	for _, b in pairs(medBars) do
+		b.fill.Size = UDim2.fromScale(math.clamp(frac, 0, 1), 1)
+		b.timer.Text = timerText
+		b.title.Text = titleText
+		if b.mode ~= mode then
+			b.mode = mode
+			b.grad.Color = (mode == "cooldown") and RECHARGE or GREEN
+		end
+		b.shine.Offset = Vector2.new(shineOffset, 0)
+	end
+	if popShown then
+		popRate.Text = (mode == "cooldown") and ("En recarga · " .. clockText(v))
+			or ("+" .. multText(medState.mult * 60 / med.SecondsPerEssence) .. " Esencia por minuto")
+		popRate.TextColor3 = (mode == "cooldown") and Color3.fromRGB(210, 200, 240) or Color3.fromRGB(190, 255, 170)
+	end
+end)
+
+local function updateMeditation()
+	medState.inside = player:GetAttribute("Meditating") == true
+	medState.prog = player:GetAttribute("MeditationProgress") or 0
+	medState.cd = player:GetAttribute("MeditationCooldown") or 0
+	medState.mult = player:GetAttribute("EssenceMultiplier") or Config.Meditation.BaseMultiplier or 1
+	medState.stamp = os.clock()
+	local essence = data and data.Essence or 0
+	essRow.Visible = essence > 0 or medState.inside or medState.cd > 0
+	essIcon.Visible = essRow.Visible
+	essText.Text = Config.FormatNumber(essence)
+	essHead.Text = medState.cd > 0 and ("ESENCIA · RECARGA " .. clockText(medState.cd)) or "ESENCIA"
+	popMult.Text = "x" .. multText(medState.mult)
+	setPopup(medState.inside)
+end
+for _, attr in ipairs({ "Meditating", "MeditationProgress", "MeditationCooldown", "EssenceMultiplier" }) do
 	player:GetAttributeChangedSignal(attr):Connect(updateMeditation)
 end
 
