@@ -478,7 +478,7 @@ function WB.BuildLobby(dim)
 		local mid = math.rad(45 + k * 45)
 		local dir = Vector3.new(math.cos(mid), 0, math.sin(mid))
 		local isEntrance = dir.Z > 0.9 or dir.Z < -0.9
-		local shopKind = (dir.Z < -0.5) and (dir.X < 0 and "Shop" or "Premium") or nil -- los dos jardines del lado de la plaza trasera
+		local shopKind = (not isEntrance and dir.Z < -0.5) and (dir.X < 0 and "Shop" or "Premium") or nil -- los dos jardines del lado de la plaza trasera
 		if shopKind then
 			WB.BuildShop(m, shopKind, c + dir * 61, c)
 		elseif not isEntrance then
