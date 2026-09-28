@@ -536,6 +536,11 @@ function GB.BuildWorld()
 	end
 	GB.BuildLobby()
 	for i = 1, d.AreasBuilt do GB.BuildArea(i) end
+	-- huevos (PROVISIONALES): lobby a la derecha del camino y costado del área 2
+	local eggs = Instance.new("Model"); eggs.Name = "Eggs"; eggs.Parent = wf
+	local LA = CFrame.lookAt(d.LobbyCenter, d.LobbyCenter + (d.Forward or Vector3.new(0, 0, 1)))
+	WB.BuildEgg(eggs, "MapleEgg", localCF(LA, 40, 0, 40).Position)
+	WB.BuildEgg(eggs, "OakEgg", localCF(Config.AreaCFrame(DIM, 2), 56, 0, -55).Position)
 	-- cierre al final del área 20
 	if d.AreasBuilt >= d.ZoneCount then
 		local A = Config.AreaCFrame(DIM, d.ZoneCount)

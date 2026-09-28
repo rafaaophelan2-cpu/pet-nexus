@@ -47,6 +47,17 @@ end
 
 -- Probabilidades en % (se muestran al jugador). Zone 1 = disponible desde el inicio (lobby).
 Config.Eggs = {
+	-- PROVISIONAL: huevos de Greenwood con las mascotas actuales hasta diseñar las mascotas del bosque
+	MapleEgg = {
+		Display = "Maple Egg", Dimension = "Greenwood", Zone = 1, Price = 100,
+		Color = Color3.fromRGB(150, 215, 110),
+		Pets = { {"Sprout", 60}, {"Bunny", 30}, {"Fox", 9}, {"Owl", 1} },
+	},
+	OakEgg = {
+		Display = "Oak Egg", Dimension = "Greenwood", Zone = 2, Price = 2000,
+		Color = Color3.fromRGB(215, 170, 110),
+		Pets = { {"Fawn", 62}, {"CloudCat", 30}, {"StarStag", 7.5}, {"NexusDragon", 0.5} },
+	},
 	NexusEgg = {
 		Display = "Nexus Egg", Dimension = "Nexus", Zone = 1, Price = 100,
 		Color = Color3.fromRGB(160, 225, 255),
@@ -60,7 +71,6 @@ Config.Eggs = {
 }
 
 -- Moneda propia de cada mundo (modelo 3D en PetNexusAssets.Currency e ícono en Icons)
--- PROVISIONAL: Greenwood usa los modelos de Angel Coin hasta que existan los suyos (Model "<X>" + Breakables "<X>Pile" + ícono).
 -- PLANTILLA DE MONEDA: todas comparten la misma forma (moneda gruesa con borde y una huella de mascota en el centro);
 -- cada mundo cambia color y detalles propios (Greenwood: oro con hojas y bellota; Nexus: blanco perla con halo y alitas).
 -- Modelos en ReplicatedStorage.PetNexusAssets.Currency/<Model> e íconos en .Icons/<Icon> (generados con el mismo prompt base).
@@ -367,11 +377,11 @@ Config.Dimensions = {
 	Greenwood = {
 		Order = 1,
 		EconomyOrder = 1,
-		Origin = Vector3.new(3000, 0, 200), -- PROVISIONAL: lejos de Nexus (el mapa aún no existe)
+		Origin = Vector3.new(3000, 0, 200), -- lejos de Nexus
 		Forward = Vector3.new(0, 0, 1),
 		LobbyCenter = Vector3.new(3000, 0, 40),
 		ZoneCount = 20,
-		AreasBuilt = 0, -- el mapa de Greenwood aún no existe
+		AreasBuilt = 20, -- mapa completo (GreenwoodBuilder); es el mundo inicial
 		ZoneLength = 140,
 		ZoneWidth = 126,
 		PlotWidth = 96,
