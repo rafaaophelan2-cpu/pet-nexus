@@ -73,8 +73,8 @@ Config.Machines = {
 -- vive como número en los datos del jugador y ningún remote la escribe; un futuro trade solo debe mover data.Pets.
 -- Tope de 15 min: Roblox expulsa tras 20 min sin input, así el ciclo se puede completar 100% AFK.
 Config.Meditation = {
-	SecondsPerEssence = 60, -- 1 Esencia por minuto dentro de la zona
-	Cap = 15,               -- tope por ciclo (15 min de meditación)
+	SecondsPerEssence = 1,  -- 1 Esencia por segundo dentro de la zona (x multiplicador)
+	Cap = 900,              -- tope de Esencia por ciclo (sin multiplicador): 900 x 1 s = 15 min de meditación
 	Cooldown = 1800,        -- recarga al llegar al tope: 30 min que solo avanzan mientras el jugador está conectado
 	BaseMultiplier = 1,     -- multiplicador de Esencia por defecto (x1); las mascotas lo subirán (ver essenceMultiplier en el servidor)
 }

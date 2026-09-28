@@ -238,7 +238,7 @@ local function makeMedBar(zone)
 	shineGrad.Rotation = 20; shineGrad.Parent = shine
 	round(shine, UDim.new(0, 9)); shine.Parent = fill
 	-- una marca por cada minuto del ciclo (estilo barra de jefe segmentada)
-	local ticks = Config.Meditation.Cap
+	local ticks = math.clamp(math.floor(Config.Meditation.Cap * Config.Meditation.SecondsPerEssence / 60), 1, 30)
 	for i = 1, ticks - 1 do
 		local tk = Instance.new("Frame")
 		tk.Size = UDim2.new(0, 2, 1, 0); tk.Position = UDim2.new(i / ticks, -1, 0, 0)
@@ -283,7 +283,8 @@ RunService.RenderStepped:Connect(function()
 	end
 	if popShown then
 		popRate.Text = (mode == "cooldown") and ("En recarga · " .. clockText(v))
-			or ("+" .. multText(medState.mult * 60 / med.SecondsPerEssence) .. " Esencia por minuto")
+			or ((med.SecondsPerEssence <= 1) and ("+" .. multText(medState.mult / med.SecondsPerEssence) .. " Esencia por segundo")
+				or ("+" .. multText(medState.mult * 60 / med.SecondsPerEssence) .. " Esencia por minuto"))
 		popRate.TextColor3 = (mode == "cooldown") and Color3.fromRGB(210, 200, 240) or Color3.fromRGB(190, 255, 170)
 	end
 end)
