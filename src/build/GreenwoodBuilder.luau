@@ -480,7 +480,7 @@ function GB.BuildLobby()
 	for k = 0, 7 do
 		local ang = math.rad(22.5 + k * 45)
 		local x, z = math.cos(ang) * 76, math.sin(ang) * 76
-		if not (z < -40 and math.abs(x) < 70) and not (z > 40 and math.abs(x) < 30) then
+		if not (z < -40 and math.abs(x) < 70) and not (z > 40 and math.abs(x) < 30) and not (x > 50 and z > 0 and z < 60) then -- libre: máquina de mejoras
 			scatter(m, A, "AutumnTree", x, z, rng:NextNumber(0.85, 1.0), rng, true)
 		end
 		local lx, lz = math.cos(ang + math.rad(22.5)) * 62, math.sin(ang + math.rad(22.5)) * 62
@@ -493,16 +493,16 @@ function GB.BuildLobby()
 	WB.BuildShop(shopFolder, "Premium", localCF(A, -50, 0, -50).Position, d.LobbyCenter)
 	-- MÁQUINA DE MEJORAS (pestañas Mejoras / Rango) a la derecha de la plaza, mirando al centro
 	local ux, uz = 100, 16
-	cyl(m, A, "UpgradePad", ux, 0.15, uz, 30, 1, STONE)
-	cyl(m, A, "UpgradePadTrim", ux, 0.4, uz, 31, 0.4, C(120, 215, 140), { Material = Enum.Material.SmoothPlastic })
-	place(m, A, "UpgradeMachine", ux, uz, 1, 0, uz, true, 0.6)
-	local um = box(m, A, "UpgradeMachine", ux - 12, 3, uz, 8, 6, 8, C(255, 255, 255), { Transparency = 1, CanCollide = false, CanQuery = false })
+	cyl(m, A, "UpgradePad", ux, 0.15, uz, 36, 1, STONE)
+	cyl(m, A, "UpgradePadTrim", ux, 0.4, uz, 37, 0.4, C(120, 215, 140), { Material = Enum.Material.SmoothPlastic })
+	place(m, A, "UpgradeMachine", ux, uz, 1.3, 0, uz, true, 0.6)
+	local um = box(m, A, "UpgradeMachine", ux - 14, 3, uz, 8, 6, 8, C(255, 255, 255), { Transparency = 1, CanCollide = false, CanQuery = false })
 	um:SetAttribute("Dimension", DIM)
 	CollectionService:AddTag(um, "UpgradeMachine")
 	local upp = Instance.new("ProximityPrompt"); upp.Style = Enum.ProximityPromptStyle.Custom; upp.ActionText = "Abrir"; upp.ObjectText = "Mejoras y Rango"
 	upp.MaxActivationDistance = 16; upp.RequiresLineOfSight = false; upp.Parent = um
-	local usign = box(m, A, "UpgradeSign", ux, 24, uz, 26, 5, 0.4, C(255, 255, 255), { Transparency = 1, CanCollide = false, CanQuery = false })
-	usign.CFrame = CFrame.lookAt(usign.Position, localCF(A, 0, 24, uz).Position)
+	local usign = box(m, A, "UpgradeSign", ux, 31, uz, 26, 5, 0.4, C(255, 255, 255), { Transparency = 1, CanCollide = false, CanQuery = false })
+	usign.CFrame = CFrame.lookAt(usign.Position, localCF(A, 0, 31, uz).Position)
 	local usg = WB.TextSurface(usign, Enum.NormalId.Front, { { Text = "MEJORAS", Size = UDim2.fromScale(0.96, 0.8), Pos = UDim2.fromScale(0.02, 0.1), Color = C(170, 255, 170) } })
 	usg.PixelsPerStud = 8
 	-- ZONA VIP (espacio 4 = a la izquierda): cerco dorado, barrera VIP en la entrada y región VipZone
