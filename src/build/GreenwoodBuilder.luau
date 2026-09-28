@@ -501,8 +501,8 @@ function GB.BuildLobby()
 	CollectionService:AddTag(um, "UpgradeMachine")
 	local upp = Instance.new("ProximityPrompt"); upp.Style = Enum.ProximityPromptStyle.Custom; upp.ActionText = "Abrir"; upp.ObjectText = "Mejoras y Rango"
 	upp.MaxActivationDistance = 16; upp.RequiresLineOfSight = false; upp.Parent = um
-	local usign = box(m, A, "UpgradeSign", ux, 31, uz, 26, 5, 0.4, C(255, 255, 255), { Transparency = 1, CanCollide = false, CanQuery = false })
-	usign.CFrame = CFrame.lookAt(usign.Position, localCF(A, 0, 31, uz).Position)
+	local usign = box(m, A, "UpgradeSign", ux, 27.5, uz, 26, 5, 0.4, C(255, 255, 255), { Transparency = 1, CanCollide = false, CanQuery = false })
+	usign.CFrame = CFrame.lookAt(usign.Position, localCF(A, 0, 27.5, uz).Position)
 	local usg = WB.TextSurface(usign, Enum.NormalId.Front, { { Text = "MEJORAS", Size = UDim2.fromScale(0.96, 0.8), Pos = UDim2.fromScale(0.02, 0.1), Color = C(170, 255, 170) } })
 	usg.PixelsPerStud = 8
 	-- ZONA VIP (espacio 4 = a la izquierda): cerco dorado, barrera VIP en la entrada y región VipZone

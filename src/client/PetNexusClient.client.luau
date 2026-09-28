@@ -1799,7 +1799,7 @@ refreshUpgrades = function()
 			bg.BackgroundColor3 = owned and Color3.fromRGB(110, 210, 110) or (isNext and Color3.fromRGB(255, 200, 70) or Color3.fromRGB(190, 186, 205))
 			round(bg, UDim.new(1, 0)); stroke(bg, 3)
 			badge.ZIndex = 34
-			label(c, { Text = "Rango " .. r .. "   " .. pctText(entry.Bonus) .. " Coins y Diamantes", Size = UDim2.fromOffset(420, 30), Position = UDim2.fromOffset(78, 20), TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = (owned or isNext) and Color3.new(1, 1, 1) or Color3.fromRGB(235, 232, 245), ZIndex = 33 })
+			label(c, { Text = "Rango " .. r .. "   " .. pctText(entry.Bonus) .. " Coins y Diamantes", Size = UDim2.fromOffset(isNext and 340 or 420, 30), Position = UDim2.fromOffset(78, 20), TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = (owned or isNext) and Color3.new(1, 1, 1) or Color3.fromRGB(235, 232, 245), ZIndex = 33 })
 			if owned then
 				buyButton(c, "LISTO", UDim2.new(1, -150, 0.5, -21), UDim2.fromOffset(130, 42), false, function() end)
 			elseif isNext then
@@ -1809,7 +1809,7 @@ refreshUpgrades = function()
 				local pd = Config.Products["RankSkip" .. r]
 				if pd then
 					local rb = buyButton(c, robux(pd.Price), UDim2.new(1, -150, 0.5, -21), UDim2.fromOffset(130, 42), true, function() Remotes.PromptProduct:FireServer("RankSkip" .. r) end)
-					rb.BackgroundColor3 = Color3.fromRGB(120, 200, 255)
+					rb.BackgroundColor3 = Color3.new(1, 1, 1)
 					local g = rb:FindFirstChildOfClass("UIGradient"); if g then g:Destroy() end
 					gradient(rb, Color3.fromRGB(150, 225, 255), Color3.fromRGB(60, 150, 240))
 				end
@@ -1861,7 +1861,7 @@ do
 	end)
 end
 
-local potionWin = makeWindow("PotionPanel", "Pociones", "Potion_Luck", 760, 560)
+local potionWin = makeWindow("PotionPanel", "Pociones", "Potion_Luck", 760, 500)
 local potionBody = potionWin.Body
 local refreshPotions
 refreshPotions = function()
@@ -1878,7 +1878,7 @@ refreshPotions = function()
 		Icons.Make(c, "Potion_" .. id, { Size = UDim2.fromOffset(74, 74), Position = UDim2.fromOffset(8, 9), ZIndex = 33 })
 		local have = data.Potions and data.Potions[id] or 0
 		label(c, { Text = def.Name, Size = UDim2.fromOffset(330, 30), Position = UDim2.fromOffset(92, 10), TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 33 })
-		subText(c, { Text = statLine(def.Stat, def.Bonus) .. " · " .. math.floor(Config.Potions.Duration / 60) .. " min cada una", Size = UDim2.fromOffset(330, 22), Position = UDim2.fromOffset(92, 44), TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = Color3.fromRGB(120, 110, 150), ZIndex = 33 })
+		subText(c, { Text = statLine(def.Stat, def.Bonus) .. " · " .. math.floor(Config.Potions.Duration / 60) .. " min", Size = UDim2.fromOffset(300, 22), Position = UDim2.fromOffset(92, 44), TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = Color3.fromRGB(120, 110, 150), ZIndex = 33 })
 		local left = potionLeft(id)
 		local st = subText(c, { Name = "Active", Text = left > 0 and ("Activa: " .. longClock(left)) or "", Size = UDim2.fromOffset(330, 22), Position = UDim2.fromOffset(92, 66), TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = Color3.fromRGB(60, 170, 80), ZIndex = 33 })
 		st:SetAttribute("Potion", id)
@@ -1891,6 +1891,7 @@ refreshPotions = function()
 			premiumTab = "Potions"; refreshPremium(); premiumWin.Open()
 		end)
 		local g = more:FindFirstChildOfClass("UIGradient"); if g then g:Destroy() end
+		more.BackgroundColor3 = Color3.new(1, 1, 1)
 		gradient(more, Color3.fromRGB(230, 170, 255), Color3.fromRGB(160, 90, 240))
 	end
 end
