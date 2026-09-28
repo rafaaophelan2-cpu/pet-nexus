@@ -12,6 +12,7 @@ local Lighting = game:GetService("Lighting")
 local player = Players.LocalPlayer
 local Config = require(ReplicatedStorage:WaitForChild("PetNexus"):WaitForChild("Config"))
 local Icons = require(ReplicatedStorage.PetNexus:WaitForChild("Icons"))
+local Stats = require(ReplicatedStorage.PetNexus:WaitForChild("Stats"))
 local Assets = ReplicatedStorage:WaitForChild("PetNexusAssets")
 local Remotes = ReplicatedStorage.PetNexus:WaitForChild("Remotes")
 local camera = workspace.CurrentCamera
@@ -445,15 +446,10 @@ local FLIP = CFrame.Angles(0, math.pi, 0) -- los modelos generados miran a +Z
 local function updatePets()
 	if not data then return end
 	local wanted = {}
-	local power = 0
 	for _, pet in ipairs(data.Pets) do
-		if pet.Equipped then
-			wanted[pet.Id] = pet.Name
-			power += Config.Pets[pet.Name].Power
-		end
+		if pet.Equipped then wanted[pet.Id] = pet.Name end
 	end
-	power *= (1 + (data.Rebirths or 0) * 0.5)
-	powerText.Text = Config.FormatNumber(power)
+	powerText.Text = Config.FormatNumber(Stats.Power(data)) -- mismo cálculo que el servidor (incluye variantes)
 	for id, m in pairs(petModels) do
 		if not wanted[id] then m:Destroy(); petModels[id] = nil end
 	end

@@ -7,8 +7,21 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
 
 local Config = require(ReplicatedStorage.PetNexus.Config)
+local Stats = require(ReplicatedStorage.PetNexus.Stats)
+local Economy = require(ReplicatedStorage.PetNexus.Economy)
 local DataService = require(ServerScriptService.DataService)
 local Remotes = ReplicatedStorage.PetNexus.Remotes
+
+-- Remotes nuevos: si no existen en Studio se crean aquí (la UI los busca con Remotes:WaitForChild(nombre))
+local function remote(name, className)
+	local r = Remotes:FindFirstChild(name)
+	if not r then
+		r = Instance.new(className or "RemoteEvent")
+		r.Name = name
+		r.Parent = Remotes
+	end
+	return r
+end
 
 local rng = Random.new()
 local state = {} -- [player] = { Target, LastHatch, LastTeleport, LastPos }
@@ -37,31 +50,25 @@ local function getCur(data, dim) return data.Currency[dim] or 0 end
 local function addCur(data, dim, amount) data.Currency[dim] = (data.Currency[dim] or 0) + amount end
 local function curName(dim) return Config.CurrencyOf(dim).Name end
 
-local function petPower(name)
-	local p = Config.Pets[name]
-	return p and p.Power or 0
-end
-
-local function equipBest(data)
-	table.sort(data.Pets, function(a, b) return petPower(a.Name) > petPower(b.Name) end)
-	for i, pet in ipairs(data.Pets) do
-		pet.Equipped = i <= Config.MaxEquipped
-	end
-end
+-- Stats, poder y equipamiento: ver Stats.luau / Economy.luau (poder real con variante, máximo según mejoras)
+local equipBest = Economy.EquipBest
 
 local function getPower(player)
 	local data = DataService.Get(player)
 	if not data then return 0 end
-	local total = 0
-	for _, pet in ipairs(data.Pets) do
-		if pet.Equipped then total += petPower(pet.Name) end
-	end
-	return total * (1 + data.Rebirths * 0.5)
+	return Stats.Power(data)
 end
 
 local function addPet(data, name)
-	table.insert(data.Pets, { Id = HttpService:GenerateGUID(false), Name = name, Equipped = false })
+	table.insert(data.Pets, Economy.NewPet(HttpService:GenerateGUID(false), name))
 	equipBest(data)
+end
+
+-- Velocidad de caminar = stat WalkSpeed (base + mejora)
+local function applyWalkSpeed(player)
+	local data = DataService.Get(player)
+	local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+	if data and hum then hum.WalkSpeed = Stats.Get(data, "WalkSpeed") end
 end
 
 local function teleport(player, position)
@@ -171,7 +178,7 @@ local function createBreakable(dim, zone)
 	model.Parent = zoneFolder
 
 	breakables[uid] = {
-		Uid = uid, Model = model, Dim = dim, Zone = zone,
+		Uid = uid, Model = model, Dim = dim, Zone = zone, Kind = kindName,
 		HP = maxHp, MaxHP = maxHp, Reward = kind.Reward * mult,
 		Position = hitbox.Position, DamageBy = {}, Broken = false,
 	}
@@ -189,9 +196,12 @@ local function breakIt(b)
 	for player, dmg in pairs(b.DamageBy) do
 		local data = player.Parent and DataService.Get(player)
 		if data then
-			local reward = math.max(1, math.floor(b.Reward * (dmg / total) * (1 + data.Rebirths * 0.5)))
+			local reward = math.max(1, math.floor(b.Reward * (dmg / total) * Stats.Get(data, "Coins", b.Dim)))
 			addCur(data, b.Dim, reward)
-			Remotes.Damage:FireClient(player, "break", b.Position, reward, b.Dim)
+			local diamonds = Economy.RollDiamondDrop(rng, b.Kind)
+			if diamonds > 0 then diamonds = Economy.AddDiamonds(data, diamonds) end
+			-- 5º argumento: diamantes ganados (0 si no salieron) para la UI futura
+			Remotes.Damage:FireClient(player, "break", b.Position, reward, b.Dim, diamonds)
 			Remotes.DataSync:FireClient(player, data)
 		end
 	end
@@ -269,37 +279,18 @@ RunService.Heartbeat:Connect(function(dt)
 				st.Target = b and b.Uid or nil
 				player:SetAttribute("Target", st.Target or "")
 			end
-			if b then
-				damage(b, player, getPower(player) * 2 * step)
+			local data = DataService.Get(player)
+			if b and data then
+				damage(b, player, getPower(player) * 2 * step * Stats.Get(data, "BreakSpeed"))
 			end
 		end
 	end
 end)
 
 ---------------------------------------------------------------- huevos
+-- Tirada con pity y suerte (Economy.RollEgg / Stats.LuckWeights)
 local function rollEgg(eggId, data)
-	local egg = Config.Eggs[eggId]
-	data.Pity[eggId] = (data.Pity[eggId] or 0) + 1
-	local pool = egg.Pets
-	local forced = data.Pity[eggId] >= Config.PityThreshold
-	if forced then
-		pool = {}
-		for _, e in ipairs(egg.Pets) do
-			if Config.Rarities[Config.Pets[e[1]].Rarity].Order >= 3 then table.insert(pool, e) end
-		end
-	end
-	local total = 0
-	for _, e in ipairs(pool) do total += e[2] end
-	local r = rng:NextNumber(0, total)
-	local pick = pool[#pool][1]
-	for _, e in ipairs(pool) do
-		r -= e[2]
-		if r <= 0 then pick = e[1] break end
-	end
-	if Config.Rarities[Config.Pets[pick].Rarity].Order >= 3 then
-		data.Pity[eggId] = 0
-	end
-	return pick, forced
+	return Economy.RollEgg(rng, eggId, data, Stats.Get(data, "Luck"))
 end
 
 local function hookEgg(eggPart)
@@ -309,7 +300,7 @@ local function hookEgg(eggPart)
 		local data = DataService.Get(player)
 		local st = state[player]
 		if not data or not st then return end
-		if os.clock() - (st.LastHatch or 0) < 0.8 then return end
+		if os.clock() - (st.LastHatch or 0) < Config.HatchCooldown / Stats.Get(data, "HatchSpeed") then return end
 		st.LastHatch = os.clock()
 		local eggId = eggPart:GetAttribute("EggId")
 		local egg = Config.Eggs[eggId]
@@ -474,10 +465,9 @@ local function inMeditationZone(player)
 	return false
 end
 
--- Multiplicador de Esencia del jugador. Por ahora siempre x1 (Config.Meditation.BaseMultiplier).
--- Aquí se sumarán los bonus de las mascotas equipadas cuando existan (leer data.Pets equipadas).
+-- Multiplicador de Esencia del jugador = stat Essence (base Config.Meditation.BaseMultiplier + Essence Master equipados)
 local function essenceMultiplier(player, data)
-	return Med.BaseMultiplier or 1
+	return Stats.Get(data, "Essence")
 end
 
 task.spawn(function()
@@ -504,8 +494,7 @@ task.spawn(function()
 						m.Cooldown = Med.Cooldown
 						notify(player, "¡Tope de Esencia! La meditación se recarga en " .. math.floor(Med.Cooldown / 60) .. " min de juego", Color3.fromRGB(215, 175, 255))
 					end
-					if gained > 0 then
-						data.Essence += gained * mult
+					if gained > 0 and Economy.GrantEssence(data, gained, mult) > 0 then
 						sync(player)
 					end
 				end
@@ -516,6 +505,208 @@ task.spawn(function()
 			end
 		end
 	end
+end)
+
+---------------------------------------------------------------- encantamientos, mejoras y variantes (solo lógica)
+-- La UI (mesa de encantamientos, máquinas) se arma en Studio y usa estos remotes. Los errores llegan como Notify.
+-- Cliente -> servidor:
+--   EnchantPet(petId)                              una tirada manual (Config.EnchantCost diamantes)
+--   StartAutoEnchant(petId, enchantId, minLevel)   requiere la mejora AutoEnchant; minLevel opcional (1)
+--   StopAutoEnchant()
+--   BuyUpgrade(upgradeId, level, dim)              level = siguiente nivel; dim solo en mejoras PerDimension (Coins)
+--   ConvertVariant(petIds, variant, dim)           petIds = lista de Id (el primero se conserva); dim = mundo de la máquina
+-- Servidor -> cliente:
+--   EnchantResult({ PetId, Id, Level, Tier, Auto })
+--   AutoEnchantStatus(status, { PetId, Target, MinLevel, Rolls, Enchant })
+--       status = "started" | "target" | "no_funds" | "cancelled" | "pet_missing"
+--   UpgradeResult(upgradeId, level, dim)           dim = nil en las mejoras globales
+--   VariantResult(petId, variant)
+local EnchantPetRemote = remote("EnchantPet")
+local StartAutoEnchantRemote = remote("StartAutoEnchant")
+local StopAutoEnchantRemote = remote("StopAutoEnchant")
+local BuyUpgradeRemote = remote("BuyUpgrade")
+local ConvertVariantRemote = remote("ConvertVariant")
+local EnchantResultRemote = remote("EnchantResult")
+local AutoEnchantStatusRemote = remote("AutoEnchantStatus")
+local UpgradeResultRemote = remote("UpgradeResult")
+local VariantResultRemote = remote("VariantResult")
+
+local RED = Color3.fromRGB(255, 120, 120)
+local GOLD = Color3.fromRGB(255, 200, 90)
+local ENCHANT_COLOR = Color3.fromRGB(200, 170, 255)
+
+local function currencyLabel(currency, dim)
+	return currency == "Diamonds" and "Diamantes" or curName(dim)
+end
+
+local function missing(player, amount, currency, dim)
+	notify(player, "Te faltan " .. Config.FormatNumber(amount) .. " " .. currencyLabel(currency, dim), GOLD)
+end
+
+-- true si la petición llegó antes del intervalo (se ignora)
+local function rateLimited(st, key, interval)
+	local now = os.clock()
+	if now - (st[key] or 0) < interval then return true end
+	st[key] = now
+	return false
+end
+
+local function validPetId(v)
+	return typeof(v) == "string" and #v > 0 and #v <= 64
+end
+
+-- Encantamiento manual
+local autoJobs = {} -- [player] = { PetId, Target, MinLevel, Rolls, Last } (uno por jugador, no se guarda)
+
+EnchantPetRemote.OnServerEvent:Connect(function(player, petId)
+	local st, data = state[player], DataService.Get(player)
+	if not st or not data or not validPetId(petId) then return end
+	if rateLimited(st, "LastEnchant", Config.RateLimits.Enchant) then return end
+	if autoJobs[player] then
+		return notify(player, "Detén el auto enchant antes de encantar a mano", GOLD)
+	end
+	local ok, res, extra = Economy.EnchantPet(data, petId, rng)
+	if not ok then
+		if res == "funds" then return missing(player, extra, "Diamonds") end
+		return notify(player, "Esa mascota no existe", RED)
+	end
+	EnchantResultRemote:FireClient(player, { PetId = petId, Id = res.Id, Level = res.Level, Tier = extra, Auto = false })
+	notify(player, "Encantamiento: " .. Config.EnchantLabel(res.Id, res.Level), ENCHANT_COLOR)
+	sync(player)
+end)
+
+-- Auto enchant: tira cada Config.AutoEnchant.Interval cobrando cada tirada hasta que sale el objetivo,
+-- se acaban los diamantes, el jugador cancela, la mascota deja de existir o el jugador sale
+local AUTO_STOP_TEXT = {
+	target = "Auto enchant: conseguiste %s en %d tiradas",
+	no_funds = "Auto enchant detenido: no te alcanzan los diamantes",
+	cancelled = "Auto enchant cancelado",
+	pet_missing = "Auto enchant detenido: la mascota ya no existe",
+}
+
+local function stopAuto(player, status)
+	local job = autoJobs[player]
+	if not job then return end
+	autoJobs[player] = nil
+	if not player.Parent then return end
+	AutoEnchantStatusRemote:FireClient(player, status, { PetId = job.PetId, Target = job.Target, MinLevel = job.MinLevel, Rolls = job.Rolls, Enchant = job.Last })
+	local text = AUTO_STOP_TEXT[status]
+	if status == "target" then text = string.format(text, Config.EnchantLabel(job.Last.Id, job.Last.Level), job.Rolls) end
+	notify(player, text, status == "target" and ENCHANT_COLOR or GOLD)
+end
+
+local function runAuto(player, job)
+	while autoJobs[player] == job do
+		task.wait(Config.AutoEnchant.Interval)
+		if autoJobs[player] ~= job then return end
+		local data = player.Parent and DataService.Get(player)
+		if not data then
+			autoJobs[player] = nil
+			return
+		end
+		local ok, res, extra = Economy.EnchantPet(data, job.PetId, rng)
+		if not ok then
+			return stopAuto(player, res == "funds" and "no_funds" or "pet_missing")
+		end
+		job.Rolls += 1
+		job.Last = { Id = res.Id, Level = res.Level }
+		EnchantResultRemote:FireClient(player, { PetId = job.PetId, Id = res.Id, Level = res.Level, Tier = extra, Auto = true })
+		sync(player)
+		if Economy.MatchesTarget(res, job.Target, job.MinLevel) then
+			return stopAuto(player, "target")
+		end
+	end
+end
+
+StartAutoEnchantRemote.OnServerEvent:Connect(function(player, petId, enchantId, minLevel)
+	local st, data = state[player], DataService.Get(player)
+	if not st or not data or not validPetId(petId) or typeof(enchantId) ~= "string" then return end
+	if rateLimited(st, "LastAutoEnchant", Config.RateLimits.AutoEnchant) then return end
+	local def = Config.Enchants[enchantId]
+	if not def then return end
+	if minLevel == nil then minLevel = 1 end
+	if typeof(minLevel) ~= "number" or minLevel ~= math.floor(minLevel) or minLevel < 1 or minLevel > #def.Levels then return end
+	if not Stats.HasUpgrade(data, "AutoEnchant") then
+		return notify(player, "Necesitas la mejora Auto Enchant", GOLD)
+	end
+	if autoJobs[player] then
+		return notify(player, "Ya tienes un auto enchant activo", GOLD)
+	end
+	local pet = Economy.FindPet(data, petId)
+	if not pet then return notify(player, "Esa mascota no existe", RED) end
+	if Economy.MatchesTarget(pet.Enchant, enchantId, minLevel) then
+		return notify(player, "Esa mascota ya tiene " .. Config.EnchantLabel(pet.Enchant.Id, pet.Enchant.Level), GOLD)
+	end
+	if (data.Diamonds or 0) < Config.EnchantCost then
+		return missing(player, Config.EnchantCost - (data.Diamonds or 0), "Diamonds")
+	end
+	local job = { PetId = petId, Target = enchantId, MinLevel = minLevel, Rolls = 0 }
+	autoJobs[player] = job
+	AutoEnchantStatusRemote:FireClient(player, "started", { PetId = petId, Target = enchantId, MinLevel = minLevel, Rolls = 0 })
+	task.spawn(runAuto, player, job)
+end)
+
+StopAutoEnchantRemote.OnServerEvent:Connect(function(player)
+	stopAuto(player, "cancelled")
+end)
+
+-- Máquina de mejoras
+local UPGRADE_ERR = {
+	dim = "Ese mundo no está disponible",
+	owned = "Ya tienes ese nivel",
+	max = "Esa mejora ya está al máximo",
+	order = "Compra primero el nivel anterior",
+}
+
+BuyUpgradeRemote.OnServerEvent:Connect(function(player, upgradeId, level, dim)
+	local st, data = state[player], DataService.Get(player)
+	if not st or not data or typeof(upgradeId) ~= "string" or typeof(level) ~= "number" then return end
+	if dim ~= nil and typeof(dim) ~= "string" then return end
+	if rateLimited(st, "LastUpgrade", Config.RateLimits.Upgrade) then return end
+	local ok, err, extra = Economy.BuyUpgrade(data, upgradeId, level, dim)
+	if not ok then
+		if err == "funds" then
+			local _, currency, curDim = Economy.UpgradeCost(upgradeId, level, dim)
+			return missing(player, extra, currency, curDim)
+		end
+		if UPGRADE_ERR[err] then notify(player, UPGRADE_ERR[err], RED) end
+		return
+	end
+	local def = Config.Upgrades[upgradeId]
+	equipBest(data) -- PetsEquipped cambia cuántas se equipan
+	applyWalkSpeed(player)
+	UpgradeResultRemote:FireClient(player, upgradeId, level, def.PerDimension and dim or nil)
+	notify(player, "Mejora comprada: " .. (def.Name or upgradeId) .. " nivel " .. level, Color3.fromRGB(150, 235, 160))
+	sync(player)
+end)
+
+-- Máquinas de variantes (Golden / Rainbow / Void)
+local VARIANT_ERR = {
+	machine = "Esa máquina no está en este mundo",
+	locked = "Desbloquea primero el área de la máquina",
+	pet = "Alguna de esas mascotas no existe",
+	mismatch = "Las mascotas tienen que ser iguales",
+}
+
+ConvertVariantRemote.OnServerEvent:Connect(function(player, petIds, variant, dim)
+	local st, data = state[player], DataService.Get(player)
+	if not st or not data or typeof(petIds) ~= "table" or typeof(variant) ~= "string" or typeof(dim) ~= "string" then return end
+	if rateLimited(st, "LastConvert", Config.RateLimits.Variant) then return end
+	local recipe = Config.VariantRecipes[variant]
+	if not recipe then return end
+	local ok, res, extra = Economy.ConvertVariant(data, petIds, variant, dim)
+	if not ok then
+		if res == "funds" then return missing(player, extra, recipe.Currency, dim) end
+		if res == "count" or res == "from" then
+			return notify(player, "Necesitas " .. recipe.Pets .. " mascotas iguales " .. recipe.From, RED)
+		end
+		if VARIANT_ERR[res] then notify(player, VARIANT_ERR[res], RED) end
+		return
+	end
+	equipBest(data)
+	VariantResultRemote:FireClient(player, res.Id, variant)
+	notify(player, Config.PetName(res.Name) .. " ahora es " .. variant, Color3.fromRGB(255, 225, 120))
+	sync(player)
 end)
 
 ---------------------------------------------------------------- jugadores
@@ -531,8 +722,10 @@ local function onPlayerAdded(player)
 		state[player].LastTeleport = os.clock()
 		state[player].LastPos = nil
 		task.wait(0.5)
+		applyWalkSpeed(player)
 		sync(player)
 	end)
+	applyWalkSpeed(player)
 	sync(player)
 end
 
@@ -540,6 +733,7 @@ Players.PlayerAdded:Connect(onPlayerAdded)
 for _, p in ipairs(Players:GetPlayers()) do task.spawn(onPlayerAdded, p) end
 
 Players.PlayerRemoving:Connect(function(player)
+	autoJobs[player] = nil -- corta el auto enchant (el bucle ve que su trabajo ya no es el actual)
 	DataService.Release(player)
 	state[player] = nil
 	for _, b in pairs(breakables) do b.DamageBy[player] = nil end
@@ -560,6 +754,11 @@ end)
 if RunService:IsStudio() then
 	local dbg = Instance.new("BindableFunction")
 	dbg.Name = "PetNexusDebug"
+	-- mascota por índice en data.Pets (1 = la más fuerte) o por Id
+	local function debugPet(data, ref)
+		if typeof(ref) == "number" then return data.Pets[ref] end
+		return Economy.FindPet(data, ref)
+	end
 	dbg.OnInvoke = function(cmd, player, value)
 		local data = DataService.Get(player)
 		if not data then return "sin datos" end
@@ -569,7 +768,32 @@ if RunService:IsStudio() then
 		elseif cmd == "medprogress" then data.Meditation.Progress = value -- segundos meditados en el ciclo
 		elseif cmd == "medcooldown" then data.Meditation.Cooldown = value -- segundos de recarga restantes
 		elseif cmd == "teleport" then teleport(player, value)
+		elseif cmd == "diamonds" then data.Diamonds += value -- suma directa, sin multiplicador (negativo para quitar)
+		elseif cmd == "variant" then -- value = { Pet = índice o Id, Variant = "Golden" }
+			local pet = debugPet(data, value.Pet)
+			if not pet or not Config.PetVariants[value.Variant] then return "mascota o variante inválida" end
+			pet.Variant = value.Variant
+		elseif cmd == "enchant" then -- value = { Pet = índice o Id, Id = "Coins", Level = 5 }; sin Id = quitar
+			local pet = debugPet(data, value.Pet)
+			if not pet then return "mascota inválida" end
+			local def = value.Id and Config.Enchants[value.Id]
+			if value.Id == nil then pet.Enchant = nil
+			elseif def and def.Levels[value.Level] then pet.Enchant = { Id = value.Id, Level = value.Level }
+			else return "encantamiento o nivel inválido" end
+		elseif cmd == "upgrade" then -- value = { Id = "Coins", Level = 2, Dim = "Nexus" } (Dim solo en PerDimension); Level 0 = quitar
+			local def = Config.Upgrades[value.Id]
+			if not def or typeof(value.Level) ~= "number" or value.Level < 0 or value.Level > #def.Levels then return "mejora o nivel inválido" end
+			if def.PerDimension then
+				if typeof(data.Upgrades[value.Id]) ~= "table" then data.Upgrades[value.Id] = {} end
+				data.Upgrades[value.Id][value.Dim or "Nexus"] = value.Level
+			else
+				data.Upgrades[value.Id] = value.Level
+			end
+		elseif cmd == "stats" then -- value = dimensión para Coins (por defecto Nexus)
+			return HttpService:JSONEncode(Stats.Compute(data, value or "Nexus"))
 		elseif cmd == "get" then return HttpService:JSONEncode(data) end
+		equipBest(data)
+		applyWalkSpeed(player)
 		sync(player)
 		return "ok"
 	end
