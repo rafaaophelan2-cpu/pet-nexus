@@ -4,4 +4,5 @@
 # To add a new tool, add an entry to this table.
 [tools]
 rojo = "rojo-rbx/rojo@7.7.0"
+lune = "lune-org/lune@0.10.5" # tests de las funciones puras: lune run tests/run
 # rojo = "rojo-rbx/rojo@6.2.0"

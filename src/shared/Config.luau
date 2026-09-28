@@ -1,12 +1,17 @@
 -- Pet Nexus: configuración central (compartida servidor/cliente)
 local Config = {}
 
-Config.MaxEquipped = 4
+Config.MaxEquipped = 4 -- base; la mejora PetsEquipped suma encima (ver Stats.MaxEquipped)
 Config.MaxInventory = 60
+Config.HatchCooldown = 0.8 -- segundos entre aperturas de huevo (base; la stat HatchSpeed lo divide)
+Config.BaseWalkSpeed = 16 -- velocidad de caminar base del jugador (la de Roblox por defecto)
+Config.RebirthBonus = 0.5 -- cada rebirth suma +50% al poder de las mascotas y a las monedas
 Config.PityThreshold = 40 -- aperturas sin Rare+ antes de garantizar uno
 Config.DamageTick = 0.25
 Config.TargetRange = 45
 Config.TeleportCooldown = 3
+-- segundos mínimos entre peticiones de cada remote nuevo (anticheat)
+Config.RateLimits = { Enchant = 0.3, AutoEnchant = 1, Upgrade = 0.4, Variant = 0.5 }
 Config.AreasPerWorld = 20
 Config.ShowPlannedMachines = true -- vista previa de íconos de máquinas aún no construidas (apagar antes de publicar)
 
@@ -67,7 +72,24 @@ Config.Machines = {
 	Golden     = { Icon = "Golden",     Name = "Máquina Dorada",     Built = false },
 	Meditation = { Icon = "Meditation", Name = "Zona de Meditación", Built = false },
 	Rainbow    = { Icon = "Rainbow",    Name = "Máquina Arcoíris",   Built = false },
+	Void       = { Icon = "Void",       Name = "Máquina Void",       Built = false }, -- aún sin área (agregar "Void" a Features)
 }
+
+-- Área del mundo donde está una máquina (la primera que la tenga en Features; LobbyFeatures cuenta como área 1).
+-- nil = esa máquina no existe en ese mundo.
+function Config.MachineArea(dim, machineId)
+	local d = Config.Dimensions[dim]
+	if not d then return nil end
+	for i, a in ipairs(d.Areas) do
+		for _, f in ipairs(a.Features or {}) do
+			if f == machineId then return i end
+		end
+	end
+	for _, f in ipairs(d.LobbyFeatures or {}) do
+		if f == machineId then return 1 end
+	end
+	return nil
+end
 
 -- Esencia AFK (Zona de Meditación = Parts con tag "MeditationZone"). La otorga solo el servidor y NO se puede tradear:
 -- vive como número en los datos del jugador y ningún remote la escribe; un futuro trade solo debe mover data.Pets.
@@ -76,7 +98,105 @@ Config.Meditation = {
 	SecondsPerEssence = 1,  -- 1 Esencia por segundo dentro de la zona (x multiplicador)
 	Cap = 900,              -- tope de Esencia por ciclo (sin multiplicador): 900 x 1 s = 15 min de meditación
 	Cooldown = 1800,        -- recarga al llegar al tope: 30 min que solo avanzan mientras el jugador está conectado
-	BaseMultiplier = 1,     -- multiplicador de Esencia por defecto (x1); las mascotas lo subirán (ver essenceMultiplier en el servidor)
+	BaseMultiplier = 1,     -- base de la stat Essence (x1); los encantamientos Essence Master la suben (ver Config.StatDefs)
+}
+
+---------------------------------------------------------------- stats (cálculo en Stats.luau)
+-- Regla: final = Base x (1 + bonus de mejora) x (1 + suma de bonus de encantamiento de las mascotas EQUIPADAS).
+-- El bonus de encantamiento de cada mascota se multiplica por el multiplicador de su variante.
+-- MaxEquipped es aparte (entero): Config.MaxEquipped + mascotas extra de la mejora PetsEquipped.
+-- Rebirths = true: la base además se multiplica por (1 + Rebirths x RebirthBonus), como ya pasaba con las monedas.
+Config.StatDefs = {
+	Coins      = { Base = 1, Rebirths = true },      -- monedas del mundo al romper (la mejora Coins es por dimensión)
+	Diamonds   = { Base = 1 },                       -- diamantes que se ganan
+	Essence    = { Base = Config.Meditation.BaseMultiplier }, -- Esencia de la Zona de Meditación
+	Luck       = { Base = 1 },                       -- suerte al abrir huevos (ver LuckMinRarity)
+	WalkSpeed  = { Base = Config.BaseWalkSpeed },    -- studs/s del jugador
+	PetSpeed   = { Base = 1 },                       -- velocidad de las mascotas (el servidor no la usa: queda para el cliente)
+	BreakSpeed = { Base = 1 },                       -- multiplica el daño por segundo a los rompibles (Haste)
+	HatchSpeed = { Base = 1 },                       -- divide Config.HatchCooldown
+}
+
+-- Suerte al abrir huevos: cada mascota con rareza de Order >= LuckMinRarity multiplica su peso por Luck; las demás quedan
+-- igual; luego se renormaliza: P(i) = w'(i) / suma(w'). Con Luck = 1 no cambia nada.
+-- La tarjeta del huevo sigue mostrando las probabilidades base.
+Config.LuckMinRarity = 3 -- Rare o superior
+
+---------------------------------------------------------------- variantes de mascota
+-- Excluyentes (una sola por mascota, pet.Variant). Multiplican el Power de la mascota y el bonus de su encantamiento.
+Config.DefaultVariant = "Normal"
+Config.PetVariants = {
+	Normal  = { Order = 1, Multiplier = 1 },
+	Golden  = { Order = 2, Multiplier = 1.5 },
+	Rainbow = { Order = 3, Multiplier = 2 },
+	Void    = { Order = 4, Multiplier = 3 },
+}
+
+-- PROVISIONAL: recetas de las máquinas de variantes. Se entregan Pets mascotas iguales (mismo Name) de la variante From;
+-- la primera de la lista se conserva (con su encantamiento) y pasa a la variante nueva, las demás se consumen.
+-- Machine = id de Config.Machines: se usa en el área del mundo que la tenga en Features (hay que tenerla desbloqueada).
+-- Currency: "Dimension" = moneda del mundo de la máquina, "Diamonds" = diamantes.
+Config.VariantRecipes = {
+	Golden  = { From = "Normal",  Pets = 5, Machine = "Golden",  Currency = "Dimension", Price = 5000 },
+	Rainbow = { From = "Golden",  Pets = 5, Machine = "Rainbow", Currency = "Dimension", Price = 250000 },
+	Void    = { From = "Rainbow", Pets = 5, Machine = "Void",    Currency = "Diamonds",  Price = 1000 },
+}
+
+---------------------------------------------------------------- encantamientos
+-- 1 slot por mascota: pet.Enchant = { Id, Level } o nil. Encantar reemplaza el actual.
+-- Tirada: 1) tier según Weight de EnchantTiers; 2) encantamiento del tier según su Weight (default 1);
+-- 3) nivel según LevelWeights del encantamiento (o EnchantLevelWeights recortado a su cantidad de niveles).
+-- Levels[n] = bonus del nivel n (0.2 = +20%) sobre la stat Stat (clave de StatDefs).
+-- Para agregar: un tier nuevo en EnchantTiers y/o una entrada nueva en Enchants con Tier, Stat, Name y Levels.
+Config.EnchantTiers = {
+	Normal = { Order = 1, Weight = 97 },
+	Rare   = { Order = 2, Weight = 3 }, -- 3% de las tiradas
+}
+Config.EnchantLevelWeights = { 45, 27, 15, 9, 4 } -- niveles altos menos probables
+Config.Enchants = {
+	Coins         = { Order = 1, Tier = "Normal", Stat = "Coins",      Name = "Coins",          Levels = { 0.2, 0.4, 0.6, 0.8, 1.0 } },
+	Diamonds      = { Order = 2, Tier = "Normal", Stat = "Diamonds",   Name = "Diamonds",       Levels = { 0.2, 0.4, 0.6, 0.8, 1.0 } },
+	Speed         = { Order = 3, Tier = "Normal", Stat = "PetSpeed",   Name = "Speed",          Levels = { 0.2, 0.4, 0.6, 0.8, 1.0 } },
+	Luck          = { Order = 4, Tier = "Normal", Stat = "Luck",       Name = "Luck",           Levels = { 0.2, 0.4, 0.6, 0.8, 1.0 } },
+	Hatcher       = { Order = 5, Tier = "Normal", Stat = "HatchSpeed", Name = "Hatcher",        Levels = { 0.2, 0.4, 0.6, 0.8, 1.0 } },
+	Haste         = { Order = 6, Tier = "Normal", Stat = "BreakSpeed", Name = "Haste",          Levels = { 0.2, 0.4, 0.6 } },
+	EssenceMaster = { Order = 7, Tier = "Rare",   Stat = "Essence",    Name = "Essence Master", Levels = { 0.5, 1.0, 2.0 } },
+}
+Config.EnchantCost = 25 -- PROVISIONAL: diamantes por tirada (manual o automática)
+Config.AutoEnchant = { Interval = 0.5 } -- segundos entre tiradas del auto enchant (no instantáneo)
+
+local ROMAN = { "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X" }
+function Config.EnchantLabel(id, level)
+	local def = Config.Enchants[id]
+	return (def and def.Name or tostring(id)) .. " " .. (ROMAN[level] or tostring(level))
+end
+
+---------------------------------------------------------------- mejoras (máquina de mejoras)
+-- Levels[n].Bonus = bonus TOTAL con el nivel n (no se suman entre niveles). Stat = clave de StatDefs, o "MaxEquipped"
+-- (Bonus = mascotas extra). Unlock = true: la mejora solo desbloquea algo (AutoEnchant: nivel 1 = desbloqueado).
+-- PerDimension = se compra y aplica por mundo (Coins de Nexus solo afecta a Angel Coins): se paga en la moneda de ese mundo
+-- y el precio se escala con Config.UpgradePriceScale(dim). Las globales se compran en la máquina del mundo Dimension.
+-- Currency: "Dimension" (moneda del mundo de la máquina) o "Diamonds".
+-- PROVISIONAL: todos los precios. Diamonds, PetsEquipped y AutoEnchant se pagan con diamantes (son de progreso global).
+Config.Upgrades = {
+	WalkSpeed = { Order = 1, Name = "Velocidad", Stat = "WalkSpeed", Dimension = "Nexus", Currency = "Dimension", Levels = {
+		{ Bonus = 0.10, Price = 500 }, { Bonus = 0.25, Price = 5000 }, { Bonus = 0.50, Price = 50000 }, { Bonus = 0.75, Price = 500000 },
+	} },
+	Coins = { Order = 2, Name = "Monedas", Stat = "Coins", PerDimension = true, Currency = "Dimension", Levels = {
+		{ Bonus = 0.10, Price = 1000 }, { Bonus = 0.25, Price = 10000 }, { Bonus = 0.50, Price = 100000 }, { Bonus = 0.75, Price = 1000000 },
+	} },
+	Diamonds = { Order = 3, Name = "Diamantes", Stat = "Diamonds", Dimension = "Nexus", Currency = "Diamonds", Levels = {
+		{ Bonus = 0.10, Price = 50 }, { Bonus = 0.25, Price = 250 }, { Bonus = 0.50, Price = 1000 }, { Bonus = 0.75, Price = 5000 },
+	} },
+	Luck = { Order = 4, Name = "Suerte", Stat = "Luck", Dimension = "Nexus", Currency = "Dimension", Levels = {
+		{ Bonus = 0.10, Price = 2000 }, { Bonus = 0.25, Price = 20000 }, { Bonus = 0.50, Price = 200000 }, { Bonus = 0.75, Price = 2000000 },
+	} },
+	PetsEquipped = { Order = 5, Name = "Mascotas equipadas", Stat = "MaxEquipped", Dimension = "Nexus", Currency = "Diamonds", Levels = {
+		{ Bonus = 1, Price = 2500 },
+	} },
+	AutoEnchant = { Order = 6, Name = "Auto Enchant", Unlock = true, Dimension = "Nexus", Currency = "Diamonds", Levels = {
+		{ Price = 1000 },
+	} },
 }
 
 -- Orden de mundos (menú de TP). Solo los que están en Config.Dimensions son jugables.
@@ -160,10 +280,17 @@ function Config.ZoneMultiplier(dim, i)
 	return 1.65 ^ (Config.GlobalIndex(dim, i) - 1)
 end
 
+-- Escala de precio de las mejoras por dimensión (PerDimension): sigue a la economía de cada mundo (Nexus = x1)
+function Config.UpgradePriceScale(dim)
+	return Config.ZoneMultiplier(dim, 1)
+end
+
+-- DiamondChance / Diamonds (PROVISIONAL): al romperse, cada jugador que le hizo daño tira DiamondChance y si sale
+-- gana Diamonds x su multiplicador de Diamonds. Los diamantes son globales (data.Diamonds), no por mundo.
 Config.Breakables = {
-	Coins      = { HP = 6,   Reward = 3,   Weight = 65 },
-	Chest      = { HP = 45,  Reward = 28,  Weight = 28 },
-	GiantChest = { HP = 300, Reward = 220, Weight = 7 },
+	Coins      = { HP = 6,   Reward = 3,   Weight = 65, DiamondChance = 0.02, Diamonds = 1 },
+	Chest      = { HP = 45,  Reward = 28,  Weight = 28, DiamondChance = 0.15, Diamonds = 2 },
+	GiantChest = { HP = 300, Reward = 220, Weight = 7,  DiamondChance = 1,    Diamonds = 10 },
 }
 Config.BreakablesPerZone = 22
 

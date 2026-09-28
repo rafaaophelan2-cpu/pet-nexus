@@ -8,7 +8,9 @@
         "$className": "Folder",
         "$ignoreUnknownInstances": true,
         "Config": { "$path": "src/shared/Config.luau" },
-        "Icons": { "$path": "src/shared/Icons.luau" }
+        "Icons": { "$path": "src/shared/Icons.luau" },
+        "Stats": { "$path": "src/shared/Stats.luau" },
+        "Economy": { "$path": "src/shared/Economy.luau" }
       }
     },
     "ServerScriptService": {

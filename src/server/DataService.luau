@@ -16,10 +16,14 @@ local sessions = {}
 local function defaultData()
 	return {
 		Currency = { Nexus = 0 }, -- moneda propia de cada mundo (Nexus = Angel Coins)
+		Diamonds = 0, -- moneda global
+		-- Pets[i] = { Id, Name, Equipped, Variant = "Normal"|"Golden"|"Rainbow"|"Void", Enchant = { Id, Level } o nil }
 		Pets = {},
 		Unlocked = { Nexus = 1 },
 		Essence = 0, -- no tradeable (ver Config.Meditation)
-		Meditation = { Progress = 0, Cooldown = 0 }, -- segundos meditados en el ciclo / segundos de recarga restantes
+		-- segundos meditados en el ciclo / segundos de recarga restantes / fracción de Esencia pendiente (multiplicador)
+		Meditation = { Progress = 0, Cooldown = 0, Carry = 0 },
+		Upgrades = {}, -- [id] = nivel; las PerDimension: [id] = { [dim] = nivel } (ver Config.Upgrades)
 		WorldsPaid = {}, -- mundos cuyo vehículo ya se pagó con Esencia
 		Pity = {},
 		Rebirths = 0,
@@ -27,12 +31,28 @@ local function defaultData()
 	}
 end
 
+-- Rellena lo que falte (también dentro de tablas anidadas) sin pisar lo que ya existe
+local function fill(target, defaults)
+	for k, v in pairs(defaults) do
+		if target[k] == nil then
+			target[k] = v
+		elseif type(v) == "table" and type(target[k]) == "table" then
+			fill(target[k], v)
+		end
+	end
+end
+
+-- Migra partidas guardadas a la forma actual (idempotente: se puede aplicar varias veces)
 local function reconcile(data)
-	for k, v in pairs(defaultData()) do
-		if data[k] == nil then data[k] = v end
+	fill(data, defaultData())
+	for _, pet in ipairs(data.Pets) do
+		if pet.Variant == nil then pet.Variant = "Normal" end -- partidas previas a las variantes
+		if type(pet.Enchant) ~= "table" then pet.Enchant = nil end
 	end
 	return data
 end
+DataService.Reconcile = reconcile
+DataService.Default = defaultData
 
 function DataService.Load(player)
 	local data
