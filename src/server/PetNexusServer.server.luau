@@ -379,7 +379,11 @@ for _, counter in ipairs(CollectionService:GetTagged("ShopCounter")) do
 	local pp = counter:FindFirstChildOfClass("ProximityPrompt")
 	if pp then
 		pp.Triggered:Connect(function(player)
-			notify(player, "La tienda abre muy pronto", Color3.fromRGB(255, 190, 230))
+			if counter:GetAttribute("ShopKind") == "Premium" then
+				notify(player, "La Premium Shop abre muy pronto", Color3.fromRGB(255, 225, 140))
+			else
+				notify(player, "La tienda abre muy pronto", Color3.fromRGB(255, 190, 230))
+			end
 		end)
 	end
 end

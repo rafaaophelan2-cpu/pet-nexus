@@ -289,7 +289,41 @@ RunService.RenderStepped:Connect(function()
 	end
 end)
 
+local lastEssence = nil
+local function essencePopup(amount)
+	local holder = Instance.new("Frame")
+	holder.BackgroundTransparency = 1
+	holder.AnchorPoint = Vector2.new(0.5, 0.5)
+	holder.Size = UDim2.fromOffset(220, 84)
+	holder.Position = UDim2.fromScale(0.3 + math.random() * 0.4, 0.28 + math.random() * 0.32)
+	holder.Rotation = math.random(-10, 10)
+	holder.ZIndex = 40
+	holder.Parent = gui
+	local sc = Instance.new("UIScale"); sc.Scale = 0.2; sc.Parent = holder
+	Icons.Make(holder, "Meditation", { Size = UDim2.fromOffset(76, 76), Position = UDim2.fromOffset(0, 4), ZIndex = 41 })
+	local t = label(holder, { Text = "+" .. Config.FormatNumber(amount), Size = UDim2.fromOffset(140, 74), Position = UDim2.fromOffset(76, 5), TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 42 })
+	gradient(t, Color3.fromRGB(255, 255, 255), MED_PURPLE)
+	local ts = t:FindFirstChildOfClass("UIStroke")
+	TweenService:Create(sc, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
+	TweenService:Create(holder, TweenInfo.new(1.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Position = holder.Position - UDim2.fromOffset(0, 60), Rotation = 0 }):Play()
+	task.delay(0.6, function()
+		local info = TweenInfo.new(0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+		TweenService:Create(t, info, { TextTransparency = 1 }):Play()
+		if ts then TweenService:Create(ts, info, { Transparency = 1 }):Play() end
+		TweenService:Create(sc, info, { Scale = 0.6 }):Play()
+		for _, vf in ipairs(holder:GetChildren()) do
+			if vf:IsA("ViewportFrame") then TweenService:Create(vf, info, { ImageTransparency = 1 }):Play() end
+		end
+	end)
+	task.delay(1.15, function() holder:Destroy() end)
+end
+
 local function updateMeditation()
+	local newEssence = data and data.Essence or 0
+	if lastEssence and newEssence > lastEssence and player:GetAttribute("Meditating") == true then
+		essencePopup(newEssence - lastEssence)
+	end
+	if data then lastEssence = newEssence end
 	medState.inside = player:GetAttribute("Meditating") == true
 	medState.prog = player:GetAttribute("MeditationProgress") or 0
 	medState.cd = player:GetAttribute("MeditationCooldown") or 0
@@ -371,6 +405,10 @@ local function updateGates()
 		gateGuis[wall].Enabled = not open
 		local pp = wall:FindFirstChildOfClass("ProximityPrompt")
 		if pp then pp.Enabled = not open end
+	end
+	-- sellos invisibles de ancho completo: solo bloquean si el área no está pagada
+	for _, seal in ipairs(CollectionService:GetTagged("AreaGateSeal")) do
+		seal.CanCollide = (data.Unlocked[seal:GetAttribute("Dimension")] or 0) < seal:GetAttribute("Zone")
 	end
 end
 
@@ -545,7 +583,7 @@ local function signIcon(part)
 	local name = part:GetAttribute("IconName")
 	if not name then return end
 	local sg = Instance.new("SurfaceGui")
-	sg.Adornee = part; sg.Face = Enum.NormalId.Front; sg.LightInfluence = 0; sg.ResetOnSpawn = false
+	sg.Adornee = part; sg.Face = Enum.NormalId[part:GetAttribute("IconFace") or "Front"]; sg.LightInfluence = 0; sg.ResetOnSpawn = false
 	sg.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud; sg.PixelsPerStud = 20
 	Icons.Make(sg, name, { Size = UDim2.fromScale(0.26, 0.95), Position = UDim2.fromScale(0.05, 0.02) })
 	sg.Parent = pgui

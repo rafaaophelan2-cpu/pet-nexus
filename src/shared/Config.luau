@@ -185,7 +185,7 @@ end
 
 function Config.ZoneFromPosition(dimension, pos)
 	local d = Config.Dimensions[dimension]
-	if math.abs(pos.X - d.Origin.X) > d.ZoneWidth / 2 + 10 then return nil end
+	if math.abs(pos.X - d.Origin.X) > 130 then return nil end -- todo el ancho del mundo (camino + islas laterales), no solo el camino
 	local rel = pos.Z - d.Origin.Z + d.ZoneLength / 2
 	local i = math.floor(rel / d.ZoneLength) + 1
 	if i < 1 or i > d.ZoneCount then return nil end

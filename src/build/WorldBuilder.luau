@@ -116,10 +116,11 @@ end
 function WB.Cloud(parent, pos, scale, color, rng)
 	color = color or WHITE
 	local m = Instance.new("Model"); m.Name = "Cloud"; m.Parent = parent
-	ball(m, pos, 8 * scale, color)
+	local deco = { CanCollide = false, CanQuery = false, CanTouch = false, CastShadow = false } -- decoración pura: barata
+	ball(m, pos, 8 * scale, color, deco)
 	for k = 1, 4 do
 		local a = k / 4 * math.pi * 2 + rng:NextNumber(0, 0.5)
-		ball(m, pos + Vector3.new(math.cos(a) * 4.2, rng:NextNumber(-1.5, 0.5), math.sin(a) * 3) * scale, rng:NextNumber(5, 7) * scale, lighten(color, 0.05))
+		ball(m, pos + Vector3.new(math.cos(a) * 4.2, rng:NextNumber(-1.5, 0.5), math.sin(a) * 3) * scale, rng:NextNumber(5, 7) * scale, lighten(color, 0.05), deco)
 	end
 	return m
 end
@@ -158,7 +159,7 @@ function WB.MountainWall(parent, from, to, rng, pieces, outward)
 			k += 1
 			local pc = pieces[(k % #pieces) + 1]
 			WB.Prop(m, pc[1], p + Vector3.new(rng:NextNumber(-4, 4), pc[4] + (row == 1 and 10 or 0), rng:NextNumber(-4, 4)), rng:NextNumber(pc[2], pc[3]) * (row == 1 and 1.15 or 1), rng:NextNumber(0, 360), false)
-			d += rng:NextNumber(38, 48)
+			d += row == 0 and rng:NextNumber(38, 48) or rng:NextNumber(54, 64) -- la fila de atrás más espaciada: menos piezas, mismo relleno
 		end
 	end
 	return m
@@ -193,9 +194,9 @@ end
 
 ---------------------------------------------------------------- piezas de mapa
 local function islandUnderside(parent, center, sx, sz, rng)
-	part(parent, { Name = "Under1", Size = Vector3.new(sx - 8, 8, sz - 8), Position = center + Vector3.new(0, -8, 0), Color = UNDER1 })
-	part(parent, { Name = "Under2", Size = Vector3.new(sx - 26, 10, sz - 24), Position = center + Vector3.new(0, -16, 0), Color = UNDER2 })
-	for _ = 1, 6 do
+	part(parent, { Name = "Under1", Size = Vector3.new(sx - 8, 8, sz - 8), Position = center + Vector3.new(0, -8, 0), Color = UNDER1, CastShadow = false, CanCollide = false, CanQuery = false })
+	part(parent, { Name = "Under2", Size = Vector3.new(sx - 26, 10, sz - 24), Position = center + Vector3.new(0, -16, 0), Color = UNDER2, CastShadow = false, CanCollide = false, CanQuery = false })
+	for _ = 1, 4 do
 		local p = center + Vector3.new(rng:NextNumber(-sx / 2, sx / 2), rng:NextNumber(-22, -12), rng:NextNumber(-sz / 2, sz / 2))
 		WB.Cloud(parent, p, rng:NextNumber(1.2, 2), nil, rng)
 	end
@@ -225,9 +226,9 @@ end
 local function sideIsland(parent, center, sx, sz, grass, rng)
 	part(parent, { Name = "SideTop", Size = Vector3.new(sx, 3, sz), Position = center + Vector3.new(0, -1.5, 0), Color = grass })
 	part(parent, { Name = "SideRim", Size = Vector3.new(sx + 1.5, 2.2, sz + 1.5), Position = center + Vector3.new(0, -3.4, 0), Color = PATH })
-	part(parent, { Name = "SideUnder", Size = Vector3.new(sx - 6, 7, sz - 6), Position = center + Vector3.new(0, -8, 0), Color = UNDER1 })
-	part(parent, { Name = "SideUnder2", Size = Vector3.new(sx - 16, 8, sz - 16), Position = center + Vector3.new(0, -14, 0), Color = UNDER2 })
-	for _ = 1, 3 do
+	part(parent, { Name = "SideUnder", Size = Vector3.new(sx - 6, 7, sz - 6), Position = center + Vector3.new(0, -8, 0), Color = UNDER1, CastShadow = false, CanCollide = false, CanQuery = false })
+	part(parent, { Name = "SideUnder2", Size = Vector3.new(sx - 16, 8, sz - 16), Position = center + Vector3.new(0, -14, 0), Color = UNDER2, CastShadow = false, CanCollide = false, CanQuery = false })
+	for _ = 1, 2 do
 		WB.Cloud(parent, center + Vector3.new(rng:NextNumber(-sx / 2, sx / 2), rng:NextNumber(-18, -10), rng:NextNumber(-sz / 2, sz / 2)), rng:NextNumber(1, 1.6), nil, rng)
 	end
 end
@@ -242,6 +243,12 @@ local function areaGate(parent, dim, i, center)
 	wall:SetAttribute("Dimension", dim)
 	wall:SetAttribute("Zone", i)
 	CollectionService:AddTag(wall, "AreaGate")
+	-- sello invisible de todo el ancho del mundo (camino + islas laterales) y bien alto: no se puede rodear ni saltar la puerta.
+	-- El cliente le quita la colisión cuando el área ya está pagada (igual que al muro).
+	local seal = part(g, { Name = "GateSeal", Size = Vector3.new(252, 160, 2), Position = center + Vector3.new(0, 70, 0), Transparency = 1, CanQuery = false, CanTouch = false, CastShadow = false })
+	seal:SetAttribute("Dimension", dim)
+	seal:SetAttribute("Zone", i)
+	CollectionService:AddTag(seal, "AreaGateSeal")
 	local pp = Instance.new("ProximityPrompt")
 	pp.Style = Enum.ProximityPromptStyle.Custom
 	pp.ActionText = "Comprar"
@@ -264,7 +271,7 @@ end
 ---------------------------------------------------------------- temas por área
 local function skyCloud(m, c, rng, color)
 	local sx = rng:NextNumber() < 0.5 and -1 or 1
-	WB.Cloud(m, c + Vector3.new(sx * rng:NextNumber(80, 160), rng:NextNumber(18, 45), rng:NextNumber(-60, 60)), rng:NextNumber(1.5, 2.6), color, rng)
+	WB.Cloud(m, c + Vector3.new(sx * rng:NextNumber(80, 160), rng:NextNumber(62, 100), rng:NextNumber(-60, 60)), rng:NextNumber(1.5, 2.6), color, rng)
 end
 
 local THEMES = {}
@@ -273,7 +280,7 @@ THEMES["Sky Spawn"] = function(m, c, a, rng)
 	local grass = Color3.fromRGB(165, 240, 175)
 	for _, sx in ipairs({ -1, 1 }) do
 		local ic = c + Vector3.new(sx * 90, -1, 0)
-		sideIsland(m, ic, 52, 128, grass, rng)
+		sideIsland(m, ic, 52, 140, grass, rng) -- largo completo del área: sin hueco al vacío entre áreas
 		local face = sx < 0 and 90 or -90 -- mirando al camino
 		-- guardianes: estatuas de ángel custodiando el área
 		WB.Prop(m, "AngelStatue", ic + Vector3.new(-sx * 14, 0, -35), 2.7, face, true)
@@ -285,8 +292,8 @@ THEMES["Sky Spawn"] = function(m, c, a, rng)
 			WB.Crystal(m, ic + Vector3.new(rng:NextNumber(-18, 18), 0, rng:NextNumber(-58, 58)), nil, rng:NextNumber(7, 12), rng)
 		end
 		-- mini islas con cascada flotando sobre el borde
-		WB.Prop(m, "MiniIsland", ic + Vector3.new(sx * 10, rng:NextNumber(22, 34), rng:NextNumber(-40, -10)), rng:NextNumber(1.3, 1.7), rng:NextNumber(0, 360), false)
-		WB.Prop(m, "MiniIsland", ic + Vector3.new(sx * 14, rng:NextNumber(26, 40), rng:NextNumber(15, 45)), rng:NextNumber(1.1, 1.5), rng:NextNumber(0, 360), false)
+		WB.Prop(m, "MiniIsland", ic + Vector3.new(sx * 10, rng:NextNumber(58, 72), rng:NextNumber(-40, -10)), rng:NextNumber(1.3, 1.7), rng:NextNumber(0, 360), false)
+		WB.Prop(m, "MiniIsland", ic + Vector3.new(sx * 14, rng:NextNumber(70, 88), rng:NextNumber(15, 45)), rng:NextNumber(1.1, 1.5), rng:NextNumber(0, 360), false)
 	end
 	for k = 1, 4 do skyCloud(m, c, rng) end
 end
@@ -295,7 +302,7 @@ THEMES["Cotton Fields"] = function(m, c, a, rng)
 	local grass = Color3.fromRGB(255, 205, 228)
 	for _, sx in ipairs({ -1, 1 }) do
 		local ic = c + Vector3.new(sx * 90, -1, 0)
-		sideIsland(m, ic, 52, 128, grass, rng)
+		sideIsland(m, ic, 52, 140, grass, rng) -- largo completo del área: sin hueco al vacío entre áreas
 		local face = sx < 0 and 90 or -90
 		for _ = 1, 7 do
 			WB.Prop(m, "CottonCandyTree", ic + Vector3.new(rng:NextNumber(-18, 18), 0, rng:NextNumber(-58, 58)), rng:NextNumber(0.9, 1.5), rng:NextNumber(0, 360), true)
@@ -311,7 +318,7 @@ end
 local function defaultTheme(m, c, a, rng)
 	for _, sx in ipairs({ -1, 1 }) do
 		local ic = c + Vector3.new(sx * 90, -1, 0)
-		sideIsland(m, ic, 52, 128, lighten(a.Plot, 0.2), rng)
+		sideIsland(m, ic, 52, 140, lighten(a.Plot, 0.2), rng)
 		for k = 1, 5 do WB.Tree(m, ic + Vector3.new(rng:NextNumber(-18, 18), 0, -60 + k * 20), a.Plot, rng:NextNumber(1, 1.4), rng) end
 	end
 end
@@ -358,6 +365,49 @@ function WB.BuildArea(dim, i)
 	local theme = THEMES[a.Name] or defaultTheme
 	theme(m, c, a, rng)
 	return m
+end
+
+-- Tiendas del lobby. kind = "Shop" (normal, Angel Coins) o "Premium" (Robux: gamepasses, mascotas limitadas...).
+-- Se colocan en 'pos' mirando al centro del lobby. El mostrador lleva el ProximityPrompt (tag ShopCounter + atributo ShopKind).
+local SHOPS = {
+	Shop = { Model = "ShopBuilding", Scale = 1.3, Title = "SHOP", Icon = "Shop", SignY = 38, Prompt = "Tienda" },
+	Premium = { Model = "PremiumShop", Scale = 1.2, YawOffset = 180, Title = "PREMIUM SHOP", Icon = "Premium", SignY = 41, Prompt = "Premium Shop",
+		Glow = Color3.fromRGB(255, 120, 230), Glow2 = Color3.fromRGB(120, 220, 255) },
+}
+function WB.BuildShop(parent, kind, pos, lookAt)
+	local def = SHOPS[kind]
+	local v = (lookAt - pos) * Vector3.new(1, 0, 1)
+	v = v.Unit
+	local yaw = math.deg(math.atan2(-v.X, -v.Z)) -- los modelos de tienda miran a -Z con yaw 0
+	local base = Vector3.new(pos.X, 0.4, pos.Z)
+	local shop = WB.Prop(parent, def.Model, base, def.Scale, yaw + (def.YawOffset or 0), true) -- YawOffset: modelos cuyo frente mira a +Z
+	if shop then shop.Name = kind == "Premium" and "PremiumShop" or "Shop" end
+	local face = CFrame.lookAt(base, base + v)
+	local counter = part(parent, { Name = kind .. "Counter", Size = Vector3.new(16, 6, 2), CFrame = face * CFrame.new(0, 3, -15), Transparency = 1, CanCollide = false })
+	local spp = Instance.new("ProximityPrompt"); spp.Style = Enum.ProximityPromptStyle.Custom; spp.ActionText = def.Prompt; spp.ObjectText = def.Title
+	spp.MaxActivationDistance = 14; spp.RequiresLineOfSight = false; spp.Parent = counter
+	counter:SetAttribute("ShopKind", kind)
+	CollectionService:AddTag(counter, "ShopCounter")
+	-- letrero holográfico flotante (texto al frente, mirando al lobby; el cliente dibuja el ícono 3D)
+	local sign = part(parent, { Name = kind .. "Sign", Size = Vector3.new(kind == "Premium" and 34 or 24, 6, 0.6), CFrame = face * CFrame.new(0, def.SignY, -4), Transparency = 1, CanCollide = false, CanQuery = false, CastShadow = false })
+	textSurface(sign, Enum.NormalId.Front, { { Text = def.Title, Size = UDim2.fromScale(kind == "Premium" and 0.7 or 0.6, 0.8), Pos = UDim2.fromScale(kind == "Premium" and 0.27 or 0.36, 0.1) } })
+	sign:SetAttribute("IconName", def.Icon)
+	sign:SetAttribute("IconFace", "Front")
+	if kind == "Premium" then
+		local sg = sign:FindFirstChildOfClass("SurfaceGui")
+		local lbl = sg and sg:FindFirstChildWhichIsA("TextLabel")
+		if lbl then
+			local g = Instance.new("UIGradient"); g.Color = ColorSequence.new(Color3.fromRGB(255, 240, 150), Color3.fromRGB(255, 150, 230)); g.Rotation = 90; g.Parent = lbl
+		end
+		-- brillo místico: luces de gema y destellos
+		local core = part(parent, { Name = "PremiumGlow", Size = Vector3.new(1, 1, 1), CFrame = face * CFrame.new(0, 14, 2), Transparency = 1, CanCollide = false, CanQuery = false, CastShadow = false })
+		local l1 = Instance.new("PointLight"); l1.Color = def.Glow; l1.Range = 22; l1.Brightness = 0.8; l1.Parent = core
+		local sp = Instance.new("ParticleEmitter"); sp.Rate = 10; sp.Lifetime = NumberRange.new(1.4, 2.4); sp.Speed = NumberRange.new(1, 2.5)
+		sp.SpreadAngle = Vector2.new(180, 180); sp.LightEmission = 1; sp.Size = NumberSequence.new(0.9, 0)
+		sp.Color = ColorSequence.new(def.Glow, def.Glow2); sp.Parent = core
+		local l2 = Instance.new("PointLight"); l2.Color = def.Glow2; l2.Range = 14; l2.Brightness = 0.6; l2.Parent = counter
+	end
+	return shop
 end
 
 function WB.BuildLobby(dim)
@@ -428,7 +478,10 @@ function WB.BuildLobby(dim)
 		local mid = math.rad(45 + k * 45)
 		local dir = Vector3.new(math.cos(mid), 0, math.sin(mid))
 		local isEntrance = dir.Z > 0.9 or dir.Z < -0.9
-		if not isEntrance then
+		local shopKind = (not isEntrance and dir.Z < -0.5) and (dir.X < 0 and "Shop" or "Premium") or nil -- los dos jardines del lado de la plaza trasera
+		if shopKind then
+			WB.BuildShop(m, shopKind, c + dir * 61, c)
+		elseif not isEntrance then
 			local bed = c + dir * 68
 			disc(m, bed + Vector3.new(0, 0.6, 0), 16, 1.2, WHITE)
 			disc(m, bed + Vector3.new(0, 1.1, 0), 14, 0.4, Color3.fromRGB(150, 230, 160))
@@ -456,21 +509,6 @@ function WB.BuildLobby(dim)
 		part(m, { Name = "Curb", Size = Vector3.new(2.4, 1.2, 170), Position = Vector3.new(c.X + sx * 78.8, 0.6, bz), Color = PATH_EDGE })
 	end
 	dashedBorder(m, Vector3.new(c.X, 0, bz - 10), 140, 132, 3, 0.45)
-
-	local shopPos = Vector3.new(c.X, 0.4, c.Z - 72)
-	local shop = WB.Prop(m, "ShopBuilding", shopPos, 1.3, 180, true)
-	if shop then shop.Name = "Shop" end
-	local counter = part(m, { Name = "ShopCounter", Size = Vector3.new(16, 6, 2), Position = shopPos + Vector3.new(0, 3, 15), Transparency = 1, CanCollide = false })
-	local spp = Instance.new("ProximityPrompt"); spp.Style = Enum.ProximityPromptStyle.Custom; spp.ActionText = "Tienda"; spp.ObjectText = "Shop"
-	spp.MaxActivationDistance = 14; spp.RequiresLineOfSight = false; spp.Parent = counter
-	CollectionService:AddTag(counter, "ShopCounter")
-	local sign = part(m, { Name = "ShopSign", Size = Vector3.new(24, 6, 0.6), Position = shopPos + Vector3.new(0, 38, 4), Transparency = 1, CanCollide = false }) -- letrero holográfico flotante
-	textSurface(sign, Enum.NormalId.Back, { { Text = "SHOP", Size = UDim2.fromScale(0.6, 0.8), Pos = UDim2.fromScale(0.36, 0.1) } })
-	sign:SetAttribute("IconName", "Shop")
-	sign:SetAttribute("IconFace", "Back")
-	for _, sx in ipairs({ -1, 1 }) do
-		WB.Pillar(m, shopPos + Vector3.new(sx * 22, -0.4, 14), 16, Color3.fromRGB(255, 200, 235))
-	end
 
 	-- plataformas para máquinas futuras (sur-este)
 	return m
@@ -530,7 +568,7 @@ function WB.BuildEnvironment()
 	env:ClearAllChildren()
 	part(env, { Name = "CloudSea", Size = Vector3.new(1400, 2, 3600), Position = Vector3.new(0, -70, 1400), Color = Color3.fromRGB(245, 240, 255), CanCollide = false, CastShadow = false })
 	local rng = Random.new(5)
-	for _ = 1, 70 do
+	for _ = 1, 42 do
 		local p = Vector3.new(rng:NextNumber(-600, 600), rng:NextNumber(-72, -58), rng:NextNumber(-300, 3000))
 		if math.abs(p.X) > 60 then
 			WB.Cloud(env, p, rng:NextNumber(3, 6), Color3.fromRGB(255, 245, 252), rng)
@@ -560,7 +598,7 @@ function WB.BuildWorld(dim)
 	local zEnd = Config.ZoneCenter(dim, d.AreasBuilt).Z + d.ZoneLength / 2
 	for _, sx in ipairs({ -1, 1 }) do
 		local out = Vector3.new(sx, 0, 0)
-		WB.MountainWall(walls, Vector3.new(sx * X, 0, zBack), Vector3.new(sx * X, 0, zLobbyEnd), rngW, WB.WallSets.Lobby, out)
+		WB.MountainWall(walls, Vector3.new(sx * X, 0, zBack + 36), Vector3.new(sx * X, 0, zLobbyEnd), rngW, WB.WallSets.Lobby, out) -- sin encimarse con la pared trasera en la esquina
 		for i = 1, d.AreasBuilt do
 			local cz = Config.ZoneCenter(dim, i).Z
 			WB.MountainWall(walls, Vector3.new(sx * X, 0, cz - d.ZoneLength / 2), Vector3.new(sx * X, 0, cz + d.ZoneLength / 2), rngW, WB.WallSets[d.Areas[i].Name] or WB.WallSets.Lobby, out)
@@ -571,8 +609,8 @@ function WB.BuildWorld(dim)
 	-- barreras invisibles (el jugador no llega a las montañas)
 	local zMid = (zBack + zEnd) / 2
 	local zLen = zEnd - zBack + 40
-	barrier(walls, Vector3.new(-124, 60, zMid), Vector3.new(4, 140, zLen))
-	barrier(walls, Vector3.new(124, 60, zMid), Vector3.new(4, 140, zLen))
+	barrier(walls, Vector3.new(-118, 60, zMid), Vector3.new(4, 160, zLen)) -- justo en el borde de las islas laterales: no hay caída al vacío
+	barrier(walls, Vector3.new(118, 60, zMid), Vector3.new(4, 160, zLen))
 	barrier(walls, Vector3.new(0, 60, d.LobbyCenter.Z - 205), Vector3.new(260, 140, 4))
 	barrier(walls, Vector3.new(0, 60, zEnd + 4), Vector3.new(260, 140, 4))
 	local eggs = Instance.new("Model"); eggs.Name = "Eggs"; eggs.Parent = workspace.World[dim]
