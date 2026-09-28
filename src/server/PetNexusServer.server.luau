@@ -5,10 +5,13 @@ local HttpService = game:GetService("HttpService")
 local CollectionService = game:GetService("CollectionService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
+local MarketplaceService = game:GetService("MarketplaceService")
 
 local Config = require(ReplicatedStorage.PetNexus.Config)
 local Stats = require(ReplicatedStorage.PetNexus.Stats)
 local Economy = require(ReplicatedStorage.PetNexus.Economy)
+local Progression = require(ReplicatedStorage.PetNexus.Progression)
+local Purchases = require(ReplicatedStorage.PetNexus.Purchases)
 local DataService = require(ServerScriptService.DataService)
 local Remotes = ReplicatedStorage.PetNexus.Remotes
 
@@ -23,8 +26,11 @@ local function remote(name, className)
 	return r
 end
 
+-- Remotes de progresión (ver la sección "rebirth, rango, pociones y compras" para argumentos)
+local PetLevelUpRemote = remote("PetLevelUp")
+
 local rng = Random.new()
-local state = {} -- [player] = { Target, LastHatch, LastTeleport, LastPos }
+local state = {} -- [player] = { Target, LastHatch, LastTeleport, LastPos, GraceUntil, Ascending, Last<remote> }
 local breakables = {} -- [uid] = {...}
 local breakableFolder = workspace:WaitForChild("Breakables")
 local world = workspace:WaitForChild("World")
@@ -71,12 +77,43 @@ local function applyWalkSpeed(player)
 	if data and hum then hum.WalkSpeed = Stats.Get(data, "WalkSpeed") end
 end
 
-local function teleport(player, position)
+-- target: Vector3 (mira a +Z, como antes) o CFrame (usa su orientación: Config.ZoneEntryCFrame / LobbySpawnCFrame)
+local function teleport(player, target)
 	local char = player.Character
 	if not char then return end
 	if state[player] then state[player].LastTeleport = os.clock() end
-	local p = position + Vector3.new(0, 4, 0)
-	char:PivotTo(CFrame.lookAt(p, p + Vector3.new(0, 0, 1))) -- mirando hacia adelante (+Z, hacia las áreas)
+	local cf = typeof(target) == "CFrame" and target or CFrame.lookAt(target, target + Vector3.new(0, 0, 1))
+	char:PivotTo(cf + Vector3.new(0, 4, 0))
+end
+
+-- ¿El jugador está a menos de 'range' studs (en horizontal, desde el borde) de alguna instancia con ese tag?
+-- dim: si se da, la instancia tiene que tener el atributo Dimension igual a dim.
+local function nearTagged(player, tag, range, dim)
+	local hrp = getHRP(player)
+	if not hrp then return false end
+	for _, inst in ipairs(CollectionService:GetTagged(tag)) do
+		if not dim or inst:GetAttribute("Dimension") == dim then
+			local pos, size
+			if inst:IsA("BasePart") then
+				pos, size = inst.Position, inst.Size
+			elseif inst:IsA("Model") then
+				local cf, sz = inst:GetBoundingBox()
+				pos, size = cf.Position, sz
+			end
+			if pos then
+				local flat = Vector3.new(hrp.Position.X - pos.X, 0, hrp.Position.Z - pos.Z).Magnitude
+				if flat - math.max(size.X, size.Z) / 2 <= range then return true end
+			end
+		end
+	end
+	return false
+end
+
+-- ¿La posición está dentro del volumen de una Part? (para regiones como la zona VIP)
+local function insidePart(part, pos)
+	local rel = part.CFrame:PointToObjectSpace(pos)
+	local half = part.Size / 2
+	return math.abs(rel.X) <= half.X and math.abs(rel.Y) <= half.Y and math.abs(rel.Z) <= half.Z
 end
 
 ---------------------------------------------------------------- rompibles
@@ -151,8 +188,9 @@ local function createBreakable(dim, zone)
 	local kind = Config.Breakables[kindName]
 	local mult = Config.ZoneMultiplier(dim, zone)
 	local d = Config.Dimensions[dim]
-	local c = Config.ZoneCenter(dim, zone)
-	local pos = c + Vector3.new(rng:NextNumber(-d.PlotWidth / 2 + 5, d.PlotWidth / 2 - 5), 0.9, rng:NextNumber(-d.PlotLength / 2 + 5, d.PlotLength / 2 - 5))
+	-- dentro de la parcela, orientada como el área (las áreas después de la esquina están giradas)
+	local pos = Config.AreaCFrame(dim, zone):PointToWorldSpace(Vector3.new(
+		rng:NextNumber(-d.PlotWidth / 2 + 5, d.PlotWidth / 2 - 5), 0.9, rng:NextNumber(-d.PlotLength / 2 + 5, d.PlotLength / 2 - 5)))
 
 	local uid = HttpService:GenerateGUID(false)
 	local model = Instance.new("Model")
@@ -200,6 +238,12 @@ local function breakIt(b)
 			addCur(data, b.Dim, reward)
 			local diamonds = Economy.RollDiamondDrop(rng, b.Kind)
 			if diamonds > 0 then diamonds = Economy.AddDiamonds(data, diamonds) end
+			-- XP fija para cada mascota equipada; si alguna sube de nivel puede cambiar cuáles conviene equipar
+			local _, leveled = Progression.GrantBreakXP(data, b.Kind)
+			if #leveled > 0 then
+				equipBest(data)
+				PetLevelUpRemote:FireClient(player, leveled)
+			end
 			-- 5º argumento: diamantes ganados (0 si no salieron) para la UI futura
 			Remotes.Damage:FireClient(player, "break", b.Position, reward, b.Dim, diamonds)
 			Remotes.DataSync:FireClient(player, data)
@@ -326,15 +370,34 @@ end
 for _, egg in ipairs(CollectionService:GetTagged("Egg")) do hookEgg(egg) end
 
 ---------------------------------------------------------------- áreas (compra)
+-- ¿El jugador está cerca de la puerta del área? Se mide contra la puerta real del mapa (tag AreaGate con atributos
+-- Dimension/Zone) y, si no hay ninguna, contra la posición de Config.GateCFrame.
+local function nearGate(player, dim, zone)
+	local hrp = getHRP(player)
+	if not hrp then return false end
+	local gatePos = Config.GateCFrame(dim, zone).Position
+	for _, wall in ipairs(CollectionService:GetTagged("AreaGate")) do
+		if wall:GetAttribute("Dimension") == dim and wall:GetAttribute("Zone") == zone and wall:IsA("BasePart") then
+			gatePos = wall.Position
+			break
+		end
+	end
+	local flat = Vector3.new(hrp.Position.X - gatePos.X, 0, hrp.Position.Z - gatePos.Z)
+	return flat.Magnitude <= Config.GateBuyRange
+end
+
 local function buyArea(player, dim, zone)
 	local data = DataService.Get(player)
 	local st = state[player]
-	local d = Config.Dimensions[dim]
+	local d = typeof(dim) == "string" and Config.Dimensions[dim]
 	if not data or not st or not d or typeof(zone) ~= "number" or zone ~= math.floor(zone) or zone < 2 or zone > d.ZoneCount then return end
 	if os.clock() - (st.LastBuy or 0) < 0.4 then return end
 	st.LastBuy = os.clock()
 	local current = data.Unlocked[dim] or 0
 	if current >= zone then return end
+	if not nearGate(player, dim, zone) then
+		return notify(player, "Acércate a la puerta para comprar el área", Color3.fromRGB(255, 200, 90))
+	end
 	if zone > d.AreasBuilt then
 		return notify(player, Config.AreaName(dim, zone) .. " llega en el próximo update", Color3.fromRGB(255, 225, 120))
 	end
@@ -395,19 +458,28 @@ Remotes.Teleport.OnServerEvent:Connect(function(player, dest, zone)
 	end
 	if zone == 0 then
 		st.LastTpReq = os.clock()
-		teleport(player, Config.LobbySpawn(dest))
+		teleport(player, Config.LobbySpawnCFrame(dest))
 		return notify(player, Config.WorldInfo(dest).Lobby, Color3.fromRGB(150, 225, 255))
 	end
 	if not canUseZone(player, dest, zone) then
 		return notify(player, "Esa área aún está bloqueada", Color3.fromRGB(255, 120, 120))
 	end
 	st.LastTpReq = os.clock()
-	teleport(player, Config.ZoneEntry(dest, zone))
+	teleport(player, Config.ZoneEntryCFrame(dest, zone)) -- mirando hacia adelante según la dirección del área
 end)
 
 ---------------------------------------------------------------- anticheat básico
--- 1) No puedes estar en una pasarela que no desbloqueaste
+-- 1) No puedes estar en un área que no desbloqueaste (ni en un mundo al que no llegaste)
 -- 2) Movimiento imposible (teletransporte / speed hack) -> te regresa
+-- 3) Zona VIP (Parts con tag "VipZone"): los que no tienen VIP salen al lobby
+-- Durante la ventana de gracia (ascensión del rebirth) no se castiga nada.
+local function hasVipAccess(data)
+	for key, def in pairs(Config.GamePasses) do
+		if def.VipAccess and Stats.HasPass(data, key) then return true end
+	end
+	return false
+end
+
 task.spawn(function()
 	while true do
 		task.wait(1)
@@ -416,19 +488,37 @@ task.spawn(function()
 			if st and data and hrp then
 				local pos = hrp.Position
 				local recentTp = os.clock() - (st.LastTeleport or 0) < 2
-				if st.LastPos and not recentTp and (pos - st.LastPos).Magnitude > 110 then
+				if st.GraceUntil and os.clock() < st.GraceUntil then
+					st.LastPos = nil
+				elseif st.LastPos and not recentTp and (pos - st.LastPos).Magnitude > 110 then
 					teleport(player, st.LastPos)
 					warn("[PetNexus][AC] Movimiento imposible:", player.Name)
 				else
+					local moved = false
 					for dim in pairs(Config.Dimensions) do
 						local zone = Config.ZoneFromPosition(dim, pos)
 						if zone and zone > (data.Unlocked[dim] or 0) then
-							local allowed = math.max(1, data.Unlocked[dim] or 1)
-							teleport(player, Config.ZoneCenter(dim, allowed))
+							if (data.Unlocked[dim] or 0) < 1 then
+								teleport(player, Config.LobbySpawnCFrame(Progression.CurrentWorld(data, nil)))
+							else
+								teleport(player, Config.AreaCFrame(dim, data.Unlocked[dim]))
+							end
+							moved = true
 							warn("[PetNexus][AC] Zona bloqueada:", player.Name)
 						end
 					end
-					st.LastPos = hrp.Position
+					if not moved and not hasVipAccess(data) then
+						for _, zonePart in ipairs(CollectionService:GetTagged("VipZone")) do
+							if zonePart:IsA("BasePart") and insidePart(zonePart, pos) then
+								local dim = zonePart:GetAttribute("Dimension")
+								teleport(player, Config.LobbySpawnCFrame(Config.Dimensions[dim] and dim or Progression.CurrentWorld(data, pos)))
+								notify(player, "Zona solo para VIP", Color3.fromRGB(255, 200, 90))
+								moved = true
+								break
+							end
+						end
+					end
+					st.LastPos = not moved and hrp.Position or nil
 				end
 			end
 		end
@@ -709,10 +799,277 @@ ConvertVariantRemote.OnServerEvent:Connect(function(player, petIds, variant, dim
 	sync(player)
 end)
 
+---------------------------------------------------------------- rebirth, rango, pociones y compras (solo lógica)
+-- La UI (estatua, ventana de rango, tienda premium, inventario de pociones) se arma en Studio y usa estos remotes.
+-- Cliente -> servidor:
+--   Rebirth(dim)            cerca de una Part con tag "RebirthStatue" y atributo Dimension = dim
+--   BuyRank(rank)           rank = el siguiente rango (se paga con diamantes)
+--   UsePotion(tipo)         "Luck" | "Coins" | "Diamonds" | "HatchSpeed"
+--   ClaimFreePotions()      cerca de una Part con tag "PotionShrine"
+--   PromptProduct(key)      abre la compra de un Developer Product (clave de Config.Products) si se puede ofrecer
+--   PromptGamePass(key)     abre la compra de un gamepass (clave de Config.GamePasses)
+-- Servidor -> cliente:
+--   RebirthResult(dim, { Number, Kept, Ascension })  animación de ascensión; el servidor teletransporta al terminar
+--   RankResult(rank)
+--   PetLevelUp({ { PetId, Level }, ... })
+--   PotionUsed(tipo, segundosRestantes) / PotionEnded(tipo)
+--   FreePotionsClaimed(pociones, proximoReclamo)       proximoReclamo en os.time()
+--   ProductGranted(key, info)                          info según Kind (ver Purchases.Grant)
+--   GamePassGranted(key)
+local RebirthRemote = remote("Rebirth")
+local BuyRankRemote = remote("BuyRank")
+local UsePotionRemote = remote("UsePotion")
+local ClaimFreePotionsRemote = remote("ClaimFreePotions")
+local PromptProductRemote = remote("PromptProduct")
+local PromptGamePassRemote = remote("PromptGamePass")
+local RebirthResultRemote = remote("RebirthResult")
+local RankResultRemote = remote("RankResult")
+local PotionUsedRemote = remote("PotionUsed")
+local PotionEndedRemote = remote("PotionEnded")
+local FreePotionsClaimedRemote = remote("FreePotionsClaimed")
+local ProductGrantedRemote = remote("ProductGranted")
+local GamePassGrantedRemote = remote("GamePassGranted")
+
+local GREEN = Color3.fromRGB(150, 235, 160)
+
+local function waitText(seconds)
+	local m = math.ceil(seconds / 60)
+	if m < 60 then return m .. " min" end
+	return math.floor(m / 60) .. " h " .. (m % 60) .. " min"
+end
+
+-- Rebirth
+local REBIRTH_ERR = {
+	dim = "Este mundo no tiene rebirth",
+	done = "Ya hiciste el rebirth de este mundo",
+}
+
+RebirthRemote.OnServerEvent:Connect(function(player, dim)
+	local st, data = state[player], DataService.Get(player)
+	if not st or not data or typeof(dim) ~= "string" then return end
+	if st.Ascending or rateLimited(st, "LastRebirth", Config.RateLimits.Rebirth) then return end
+	local ok, err, extra = Progression.CanRebirth(data, dim)
+	if not ok then
+		if err == "area" then
+			return notify(player, "Desbloquea " .. Config.AreaName(dim, extra) .. " para hacer rebirth", RED)
+		elseif err == "order" then
+			return notify(player, "Primero haz el rebirth de " .. (Config.WorldInfo(extra) and Config.WorldInfo(extra).Display or extra), RED)
+		end
+		return notify(player, REBIRTH_ERR[err] or "No puedes hacer rebirth", RED)
+	end
+	if not nearTagged(player, "RebirthStatue", Config.RebirthRange, dim) then
+		return notify(player, "Acércate a la estatua de Rebirth", GOLD)
+	end
+	local _, info = Progression.Rebirth(data, dim)
+	info.Ascension = Config.RebirthAscension
+	-- ventana de gracia: el cliente hace volar al personaje y sus áreas se acaban de reiniciar
+	st.GraceUntil = os.clock() + Config.RebirthGrace
+	st.Ascending = true
+	equipBest(data) -- el rebirth puede dar mascotas equipadas extra
+	RebirthResultRemote:FireClient(player, dim, info)
+	sync(player)
+	task.spawn(DataService.Save, player)
+	task.delay(Config.RebirthAscension, function()
+		st.Ascending = nil
+		if player.Parent then
+			teleport(player, Config.LobbySpawnCFrame(dim))
+			st.LastPos = nil
+		end
+	end)
+end)
+
+-- Rango (con diamantes)
+local RANK_ERR = {
+	locked = "El rango se desbloquea con el primer rebirth",
+	owned = "Ya tienes ese rango",
+	max = "Ya tienes el rango máximo",
+	order = "Compra primero el rango anterior",
+}
+
+BuyRankRemote.OnServerEvent:Connect(function(player, rank)
+	local st, data = state[player], DataService.Get(player)
+	if not st or not data or typeof(rank) ~= "number" then return end
+	if rateLimited(st, "LastRank", Config.RateLimits.Rank) then return end
+	local ok, err, extra = Progression.BuyRank(data, rank)
+	if not ok then
+		if err == "funds" then return missing(player, extra, "Diamonds") end
+		if RANK_ERR[err] then notify(player, RANK_ERR[err], RED) end
+		return
+	end
+	RankResultRemote:FireClient(player, rank)
+	notify(player, "Rango " .. rank .. " desbloqueado", GREEN)
+	sync(player)
+end)
+
+-- Pociones: el tiempo solo corre con el jugador conectado (este bucle solo ve jugadores conectados)
+UsePotionRemote.OnServerEvent:Connect(function(player, potionType)
+	local st, data = state[player], DataService.Get(player)
+	if not st or not data or typeof(potionType) ~= "string" then return end
+	if rateLimited(st, "LastPotion", Config.RateLimits.Potion) then return end
+	local ok, res = Purchases.UsePotion(data, potionType)
+	if not ok then
+		if res == "none" then notify(player, "No tienes esa poción", RED) end
+		return
+	end
+	PotionUsedRemote:FireClient(player, potionType, res)
+	notify(player, Config.Potions.Types[potionType].Name .. ": " .. waitText(res), GREEN)
+	sync(player)
+end)
+
+task.spawn(function()
+	while true do
+		local dt = math.min(task.wait(1), 3)
+		for _, player in ipairs(Players:GetPlayers()) do
+			local data = DataService.Get(player)
+			if data then
+				local ended = Purchases.TickPotions(data, dt)
+				for _, potionType in ipairs(ended) do
+					PotionEndedRemote:FireClient(player, potionType)
+					notify(player, Config.Potions.Types[potionType].Name .. " terminó", GOLD)
+				end
+				if #ended > 0 then sync(player) end
+			end
+		end
+	end
+end)
+
+-- Pociones gratis (cooldown en tiempo real: os.time)
+ClaimFreePotionsRemote.OnServerEvent:Connect(function(player)
+	local st, data = state[player], DataService.Get(player)
+	if not st or not data then return end
+	if rateLimited(st, "LastFreePotions", Config.RateLimits.FreePotions) then return end
+	if not nearTagged(player, "PotionShrine", Config.FreePotions.Range) then
+		return notify(player, "Acércate al santuario de pociones", GOLD)
+	end
+	local ok, res, extra = Purchases.ClaimFreePotions(data, os.time())
+	if not ok then
+		return notify(player, "Pociones gratis otra vez en " .. waitText(extra), GOLD)
+	end
+	FreePotionsClaimedRemote:FireClient(player, res, data.FreePotions.NextClaim)
+	notify(player, "Recibiste pociones gratis", GREEN)
+	sync(player)
+end)
+
+-- Gamepasses: se revisan al entrar (cacheado en data.Passes) y al comprar dentro del juego. Id = 0: desactivado.
+local passById = {}
+for key, def in pairs(Config.GamePasses) do
+	if def.Id > 0 then passById[def.Id] = key end
+end
+
+local function afterStatsChange(player, data)
+	equipBest(data)
+	applyWalkSpeed(player)
+	sync(player)
+end
+
+local function refreshPasses(player, data)
+	for key, def in pairs(Config.GamePasses) do
+		if def.Id > 0 then
+			local ok, owns = pcall(MarketplaceService.UserOwnsGamePassAsync, MarketplaceService, player.UserId, def.Id)
+			if ok then
+				data.Passes[key] = owns or nil
+			else
+				warn("[PetNexus] No se pudo revisar el gamepass " .. key .. ": se usa lo guardado")
+			end
+		else
+			data.Passes[key] = nil
+		end
+	end
+	if player.Parent then afterStatsChange(player, data) end
+end
+
+MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(player, passId, purchased)
+	local key = passById[passId]
+	local data = DataService.Get(player)
+	if not purchased or not key or not data then return end
+	data.Passes[key] = true
+	GamePassGrantedRemote:FireClient(player, key)
+	notify(player, "Gamepass activado: " .. Config.GamePasses[key].Name, GREEN)
+	afterStatsChange(player, data)
+end)
+
+PromptGamePassRemote.OnServerEvent:Connect(function(player, key)
+	local st, data = state[player], DataService.Get(player)
+	if not st or not data or typeof(key) ~= "string" then return end
+	if rateLimited(st, "LastPrompt", Config.RateLimits.Prompt) then return end
+	local def = Config.GamePasses[key]
+	if not def or def.Id <= 0 then return notify(player, "Todavía no está a la venta", GOLD) end
+	if Stats.HasPass(data, key) then return notify(player, "Ya tienes " .. def.Name, GOLD) end
+	MarketplaceService:PromptGamePassPurchase(player, def.Id)
+end)
+
+-- Developer Products
+local PROMPT_ERR = {
+	unavailable = "Todavía no está a la venta",
+	locked = "Aún no puedes comprar esto",
+	rank = "Ese no es tu siguiente rango",
+	ready = "Ya puedes reclamar tus pociones gratis",
+	limit = "Ya usaste los saltos de hoy",
+}
+
+local function purchaseContext(player, data)
+	local hrp = getHRP(player)
+	return { Dim = Progression.CurrentWorld(data, hrp and hrp.Position), Now = os.time() }
+end
+
+PromptProductRemote.OnServerEvent:Connect(function(player, key)
+	local st, data = state[player], DataService.Get(player)
+	if not st or not data or typeof(key) ~= "string" then return end
+	if rateLimited(st, "LastPrompt", Config.RateLimits.Prompt) then return end
+	local ok, err = Purchases.CanOffer(data, key, purchaseContext(player, data))
+	if not ok then
+		if PROMPT_ERR[err] then notify(player, PROMPT_ERR[err], GOLD) end
+		return
+	end
+	MarketplaceService:PromptProductPurchase(player, Config.Products[key].Id)
+end)
+
+-- ProcessReceipt: nunca entrega dos veces el mismo PurchaseId (queda en data.Receipts), no entrega si los datos no
+-- cargaron, y solo confirma a Roblox cuando quedó guardado (si el guardado falla, Roblox reintenta y el PurchaseId
+-- ya registrado evita la doble entrega). En Studio sin DataStore se confirma igual.
+MarketplaceService.ProcessReceipt = function(receipt)
+	local player = Players:GetPlayerByUserId(receipt.PlayerId)
+	if not player or not DataService.IsLoaded(player) then
+		return Enum.ProductPurchaseDecision.NotProcessedYet
+	end
+	local data = DataService.Get(player)
+	local ok, status, key, info = pcall(Purchases.ProcessReceipt, data, receipt, purchaseContext(player, data))
+	if not ok then
+		warn("[PetNexus] Error entregando la compra " .. tostring(receipt.ProductId) .. ":", status)
+		return Enum.ProductPurchaseDecision.NotProcessedYet
+	end
+	if status == "unknown" then
+		warn("[PetNexus] Developer Product sin configurar en Config.Products:", receipt.ProductId)
+		return Enum.ProductPurchaseDecision.NotProcessedYet
+	end
+	if status == "granted" then
+		ProductGrantedRemote:FireClient(player, key, info)
+		if info.Kind == "RankSkip" and info.Result == "rank" then
+			RankResultRemote:FireClient(player, info.Rank)
+			notify(player, "Rango " .. info.Rank .. " desbloqueado", GREEN)
+		elseif info.Kind == "RankSkip" then
+			notify(player, "Recibiste " .. Config.FormatNumber(info.Diamonds) .. " Diamantes", GREEN)
+		else
+			notify(player, "Compra entregada", GREEN)
+		end
+		sync(player)
+	end
+	if DataService.Save(player) or RunService:IsStudio() then
+		return Enum.ProductPurchaseDecision.PurchaseGranted
+	end
+	return Enum.ProductPurchaseDecision.NotProcessedYet
+end
+
 ---------------------------------------------------------------- jugadores
+-- Opciones de migración de datos (ver DataService.Reconcile)
+local rebirthOrder = {}
+for dim in pairs(Config.Rebirths) do table.insert(rebirthOrder, dim) end
+table.sort(rebirthOrder, function(a, b) return Config.Rebirths[a].Number < Config.Rebirths[b].Number end)
+local LOAD_OPTS = { StartWorld = Config.SpawnWorld(), RebirthOrder = rebirthOrder, StartLevel = Config.PetLevels.StartLevel }
+
 local function onPlayerAdded(player)
 	state[player] = {}
-	local data = DataService.Load(player)
+	local data = DataService.Load(player, LOAD_OPTS)
 	if #data.Pets == 0 then
 		addPet(data, "Sprout")
 	else
@@ -727,6 +1084,7 @@ local function onPlayerAdded(player)
 	end)
 	applyWalkSpeed(player)
 	sync(player)
+	task.spawn(refreshPasses, player, data) -- gamepasses reales (puede tardar: se sincroniza de nuevo al terminar)
 end
 
 Players.PlayerAdded:Connect(onPlayerAdded)
@@ -762,8 +1120,11 @@ if RunService:IsStudio() then
 	dbg.OnInvoke = function(cmd, player, value)
 		local data = DataService.Get(player)
 		if not data then return "sin datos" end
-		if cmd == "coins" then data.Currency.Nexus = value
-		elseif cmd == "unlock" then data.Unlocked.Nexus = value
+		-- coins / unlock: número (Nexus) o { Dim = "Greenwood", Value = n }
+		if cmd == "coins" then
+			if typeof(value) == "table" then data.Currency[value.Dim] = value.Value else data.Currency.Nexus = value end
+		elseif cmd == "unlock" then
+			if typeof(value) == "table" then data.Unlocked[value.Dim] = value.Value else data.Unlocked.Nexus = value end
 		elseif cmd == "essence" then data.Essence = value
 		elseif cmd == "medprogress" then data.Meditation.Progress = value -- segundos meditados en el ciclo
 		elseif cmd == "medcooldown" then data.Meditation.Cooldown = value -- segundos de recarga restantes
@@ -791,6 +1152,35 @@ if RunService:IsStudio() then
 			end
 		elseif cmd == "stats" then -- value = dimensión para Coins (por defecto Nexus)
 			return HttpService:JSONEncode(Stats.Compute(data, value or "Nexus"))
+		elseif cmd == "rebirth" then -- value = "Greenwood": marca el rebirth como hecho (sin requisitos ni reinicio)
+			if not Config.Rebirths[value] then return "mundo sin rebirth" end
+			data.RebirthsDone[value] = true
+		elseif cmd == "unrebirth" then -- value = "Greenwood": deshace el rebirth
+			data.RebirthsDone[value] = nil
+		elseif cmd == "rank" then -- value = 0..10
+			if typeof(value) ~= "number" or value < 0 or value > #Config.Ranks.Levels then return "rango inválido" end
+			data.Rank = math.floor(value)
+		elseif cmd == "xp" then -- value = { Pet = índice o Id, XP = 500 }: suma XP y sube niveles
+			local pet = debugPet(data, value.Pet)
+			if not pet then return "mascota inválida" end
+			Progression.AddPetXP(pet, value.XP or 0)
+		elseif cmd == "level" then -- value = { Pet = índice o Id, Level = 50 }
+			local pet = debugPet(data, value.Pet)
+			if not pet or typeof(value.Level) ~= "number" then return "mascota o nivel inválido" end
+			pet.Level = math.clamp(math.floor(value.Level), 1, Config.PetLevels.MaxLevel)
+			pet.XP = 0
+		elseif cmd == "potions" then -- value = { Luck = 5, Coins = 2, ... } al inventario
+			Purchases.AddPotions(data, value)
+		elseif cmd == "potiontime" then -- value = { Luck = 60 }: segundos restantes de la poción activa
+			for id, t in pairs(value) do
+				if Config.Potions.Types[id] then data.PotionTime[id] = t end
+			end
+		elseif cmd == "pass" then -- value = { Key = "VIP", Owned = true }: simula ser dueño (se borra al volver a entrar)
+			if not Config.GamePasses[value.Key] then return "gamepass inválido" end
+			data.Passes[value.Key] = value.Owned ~= false or nil
+		elseif cmd == "freepotions" then -- reinicia el cooldown y los saltos del día de las pociones gratis
+			data.FreePotions.NextClaim = 0
+			data.FreePotions.SkipsUsed = 0
 		elseif cmd == "get" then return HttpService:JSONEncode(data) end
 		equipBest(data)
 		applyWalkSpeed(player)

@@ -147,7 +147,9 @@ H.test("romper da XP fija a CADA mascota equipada, doble con Double XP", functio
 	H.eq(Progression.GrantBreakXP(d, "Coins"), 2 * Config.Breakables.Coins.XP)
 	H.ok(Config.Breakables.GiantChest.XP > Config.Breakables.Coins.XP, "cofres dan más que monedas")
 	local _, leveled = Progression.GrantBreakXP(d, "GiantChest")
-	H.eq(leveled, true)
+	H.eq(#leveled, 2)
+	H.eq(leveled[1].PetId, d.Pets[1].Id)
+	H.eq(leveled[1].Level, d.Pets[1].Level)
 end)
 
 H.describe("Stats con gamepasses y pociones")

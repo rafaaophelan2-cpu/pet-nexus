@@ -94,14 +94,17 @@ function Progression.AddPetXP(pet, amount)
 	return gained
 end
 
--- XP de un rompible para cada mascota equipada (no se divide entre ellas). Devuelve la XP dada y si alguna subió.
+-- XP de un rompible para cada mascota equipada (no se divide entre ellas).
+-- Devuelve la XP dada y la lista de mascotas que subieron: { { PetId, Level }, ... }
 function Progression.GrantBreakXP(data, kindName)
 	local k = Config.Breakables[kindName]
-	if not k or not k.XP then return 0, false end
+	local leveled = {}
+	if not k or not k.XP then return 0, leveled end
 	local xp = math.floor(k.XP * Stats.Get(data, "XP"))
-	local leveled = false
 	for _, pet in ipairs(data.Pets) do
-		if pet.Equipped and Progression.AddPetXP(pet, xp) > 0 then leveled = true end
+		if pet.Equipped and Progression.AddPetXP(pet, xp) > 0 then
+			table.insert(leveled, { PetId = pet.Id, Level = pet.Level })
+		end
 	end
 	return xp, leveled
 end

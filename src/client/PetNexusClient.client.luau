@@ -413,6 +413,21 @@ local function updateGates()
 	end
 end
 
+---------------------------------------------------------------- zona VIP (lógica, sin UI)
+-- Las Parts con tag "VipBarrier" no chocan (solo en este cliente) si el jugador tiene un gamepass con VipAccess.
+-- El servidor saca de las regiones "VipZone" a quien no lo tiene, así que esto no se puede abusar.
+local function updateVipBarriers()
+	if not data then return end
+	local vip = false
+	for key, def in pairs(Config.GamePasses) do
+		if def.VipAccess and Stats.HasPass(data, key) then vip = true end
+	end
+	for _, barrier in ipairs(CollectionService:GetTagged("VipBarrier")) do
+		if barrier:IsA("BasePart") then barrier.CanCollide = not vip end
+	end
+end
+CollectionService:GetInstanceAddedSignal("VipBarrier"):Connect(function() updateVipBarriers() end)
+
 ---------------------------------------------------------------- mascotas (modelos 3D generados)
 local petFolder = Instance.new("Folder")
 petFolder.Name = "ClientPets"
@@ -1286,6 +1301,7 @@ Remotes.DataSync.OnClientEvent:Connect(function(newData)
 	if first then displayed = curAmount(currentWorld()) end
 	updatePets()
 	updateGates()
+	updateVipBarriers()
 	updateMeditation()
 	if panel.Visible then refreshPanel() end
 end)
