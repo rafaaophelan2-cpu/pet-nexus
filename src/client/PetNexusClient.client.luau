@@ -1393,6 +1393,16 @@ end
 local function clearGui(frame)
 	for _, c in ipairs(frame:GetChildren()) do if c:IsA("GuiObject") then c:Destroy() end end
 end
+-- texto secundario: tamaño fijo, sin contorno, con salto de línea (se lee mejor que el TextScaled chiquito)
+local function subText(parent, props)
+	local t = label(parent, props)
+	t.UIStroke:Destroy()
+	t.TextScaled = false
+	t.TextSize = props.TextSize or 17
+	t.TextWrapped = true
+	t.TextYAlignment = Enum.TextYAlignment.Top
+	return t
+end
 local function pctText(v) return "+" .. math.floor(v * 100 + 0.5) .. "%" end
 local STAT_ICON = { Coins = "Coin", Diamonds = "Diamond", Luck = "Luck", MaxEquipped = "Power", Essence = "Meditation", XP = "Power", HatchSpeed = "Potion_HatchSpeed" }
 local function statLine(stat, v)
@@ -1484,9 +1494,9 @@ Remotes:WaitForChild("RebirthResult").OnClientEvent:Connect(function(dim, info)
 	local beam = Instance.new("Part")
 	beam.Anchored = true; beam.CanCollide = false; beam.CanQuery = false; beam.CanTouch = false; beam.CastShadow = false
 	beam.Shape = Enum.PartType.Cylinder; beam.Material = Enum.Material.Neon; beam.Color = Color3.fromRGB(255, 225, 130)
-	beam.Size = Vector3.new(260, 10, 10); beam.CFrame = CFrame.new(start + Vector3.new(0, 128, 0)) * CFrame.Angles(0, 0, math.rad(90))
-	beam.Transparency = 0.25; beam.Parent = workspace
-	TweenService:Create(beam, TweenInfo.new(dur + 1), { Transparency = 1, Size = Vector3.new(260, 18, 18) }):Play()
+	beam.Size = Vector3.new(260, 7, 7); beam.CFrame = CFrame.new(start + Vector3.new(0, 128, 0)) * CFrame.Angles(0, 0, math.rad(90))
+	beam.Transparency = 0.45; beam.Parent = workspace
+	TweenService:Create(beam, TweenInfo.new(dur + 1), { Transparency = 1, Size = Vector3.new(260, 11, 11) }):Play()
 	task.delay(dur + 1.2, function() beam:Destroy() end)
 	local spark = Instance.new("ParticleEmitter")
 	spark.Rate = 60; spark.Lifetime = NumberRange.new(0.8, 1.4); spark.Speed = NumberRange.new(4, 10); spark.SpreadAngle = Vector2.new(180, 180)
@@ -1572,7 +1582,9 @@ refreshPremium = function()
 		local sel = premiumTab == tb[1]
 		local b = button(premiumTabs, { Text = "", Size = UDim2.fromOffset(180, 46), Position = UDim2.fromOffset((k - 1) * 190, 0), BackgroundColor3 = sel and Color3.fromRGB(200, 120, 255) or Color3.new(1, 1, 1), ZIndex = 32 })
 		if sel then gradient(b, Color3.fromRGB(230, 170, 255), Color3.fromRGB(160, 90, 240)) end
-		label(b, { Text = tb[2], Size = UDim2.new(1, -10, 1, -10), Position = UDim2.fromOffset(5, 5), TextColor3 = sel and Color3.new(1, 1, 1) or INK, ZIndex = 33 })
+		b.Name = "Tab_" .. tb[1]
+		local tl = label(b, { Text = tb[2], Size = UDim2.new(1, -10, 1, -12), Position = UDim2.fromOffset(5, 6), TextColor3 = sel and Color3.new(1, 1, 1) or Color3.fromRGB(150, 110, 210), ZIndex = 33 })
+		if not sel then tl.UIStroke.Transparency = 1 end
 		b.MouseButton1Click:Connect(function() premiumTab = tb[1]; refreshPremium() end)
 	end
 	clearGui(premiumList)
@@ -1591,7 +1603,7 @@ refreshPremium = function()
 					if def.Bonus and def.Bonus[stat] then table.insert(parts, statLine(stat, def.Bonus[stat])) end
 				end
 				if def.KeepOnRebirth then table.insert(parts, "El Rebirth no reinicia tus mundos") end
-				label(c, { Text = table.concat(parts, " · "), Size = UDim2.fromOffset(480, 24), Position = UDim2.fromOffset(88, 44), TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = Color3.fromRGB(120, 110, 150), ZIndex = 33 })
+				subText(c, { Text = table.concat(parts, "  ·  "), Size = UDim2.fromOffset(480, 38), Position = UDim2.fromOffset(88, 42), TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = Color3.fromRGB(120, 110, 150), ZIndex = 33 })
 				local owned = Stats.HasPass(data, key)
 				buyButton(c, owned and "COMPRADO" or robux(def.Price), UDim2.new(1, -170, 0.5, -24), UDim2.fromOffset(150, 48), not owned, function()
 					Remotes.PromptGamePass:FireServer(key)
@@ -1607,7 +1619,7 @@ refreshPremium = function()
 			local c = card(premiumList, i, 110)
 			Icons.Make(c, "Potion_" .. id, { Size = UDim2.fromOffset(70, 70), Position = UDim2.fromOffset(8, 8), ZIndex = 33 })
 			label(c, { Text = def.Name, Size = UDim2.fromOffset(360, 30), Position = UDim2.fromOffset(88, 8), TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 33 })
-			label(c, { Text = statLine(def.Stat, def.Bonus) .. " · " .. math.floor(Config.Potions.Duration / 60) .. " min (se suma el tiempo)", Size = UDim2.fromOffset(460, 22), Position = UDim2.fromOffset(88, 40), TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = Color3.fromRGB(120, 110, 150), ZIndex = 33 })
+			subText(c, { Text = statLine(def.Stat, def.Bonus) .. " · " .. math.floor(Config.Potions.Duration / 60) .. " min (se suma el tiempo)", Size = UDim2.fromOffset(460, 22), Position = UDim2.fromOffset(88, 40), TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = Color3.fromRGB(120, 110, 150), ZIndex = 33 })
 			for k, q in ipairs({ { 1, "" }, { 3, "-10%" }, { 5, "-20%" }, { 10, "-30%" } }) do
 				local key = "Potion_" .. id .. "_" .. q[1]
 				local pd = Config.Products[key]
@@ -1629,7 +1641,7 @@ refreshPremium = function()
 				c.BackgroundColor3 = Color3.fromRGB(255, 244, 220)
 				Icons.Make(c, "Premium", { Size = UDim2.fromOffset(74, 74), Position = UDim2.fromOffset(8, 11), ZIndex = 33 })
 				label(c, { Text = bd[2] .. "  " .. bd[4], Size = UDim2.fromOffset(460, 32), Position = UDim2.fromOffset(92, 12), TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = Color3.fromRGB(230, 150, 30), ZIndex = 33 })
-				label(c, { Text = bd[3], Size = UDim2.fromOffset(460, 24), Position = UDim2.fromOffset(92, 50), TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = Color3.fromRGB(120, 110, 150), ZIndex = 33 })
+				subText(c, { Text = bd[3], Size = UDim2.fromOffset(460, 24), Position = UDim2.fromOffset(92, 50), TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = Color3.fromRGB(120, 110, 150), ZIndex = 33 })
 				buyButton(c, robux(pd.Price), UDim2.new(1, -170, 0.5, -24), UDim2.fromOffset(150, 48), true, function() Remotes.PromptProduct:FireServer(bd[1]) end)
 			end
 		end
@@ -1647,7 +1659,7 @@ refreshPremium = function()
 					Icons.Make(c, kind[2], { Size = UDim2.fromOffset(60, 60), Position = UDim2.fromOffset(10, 7), ZIndex = 33 })
 					local amount = Purchases.PackAmount(key, data, dim)
 					label(c, { Text = Config.FormatNumber(amount) .. " " .. kind[3], Size = UDim2.fromOffset(420, 32), Position = UDim2.fromOffset(84, 8), TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 33 })
-					label(c, { Text = kind[1] == "CoinPack" and "Crece con tu progreso en este mundo" or "Crece con tu progreso", Size = UDim2.fromOffset(420, 22), Position = UDim2.fromOffset(84, 42), TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = Color3.fromRGB(120, 110, 150), ZIndex = 33 })
+					subText(c, { Text = kind[1] == "CoinPack" and "Crece con tu progreso en este mundo" or "Crece con tu progreso", Size = UDim2.fromOffset(420, 22), Position = UDim2.fromOffset(84, 42), TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = Color3.fromRGB(120, 110, 150), ZIndex = 33 })
 					buyButton(c, robux(pd.Price), UDim2.new(1, -170, 0.5, -22), UDim2.fromOffset(150, 44), true, function() Remotes.PromptProduct:FireServer(key) end)
 				end
 			end
