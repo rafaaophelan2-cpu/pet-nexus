@@ -17,10 +17,10 @@ local part = WB.Part
 local function C(r, g, b) return Color3.fromRGB(r, g, b) end
 local GRASS = C(126, 196, 98)
 local GRASS_SIDE = C(138, 206, 106)
-local SIDEWALK = C(222, 214, 198)
-local CURB = C(176, 168, 158)
-local STONE = C(206, 200, 190)
-local PLAZA = C(236, 226, 200)
+local SIDEWALK = C(196, 188, 174)
+local CURB = C(160, 150, 140)
+local STONE = C(186, 180, 170)
+local PLAZA = C(214, 198, 164)
 local GOLD = C(246, 202, 84)
 local WOOD = C(150, 104, 70)
 local WATER = C(96, 176, 230)
@@ -404,9 +404,27 @@ local function cornerArea(m, A, d, i, a, rng)
 		local bx, bz = sx + rng:NextNumber(-10, 10), sz + rng:NextNumber(-10, 10)
 		cyl(m, A, "LightBeam", bx, 55, bz, 3, 110, C(255, 230, 150), { Material = Enum.Material.Neon, Transparency = 0.82, CanCollide = false, CanQuery = false, CastShadow = false })
 	end
-	local title = box(m, A, "RebirthTitle", sx, 60, sz, 40, 8, 0.4, C(255, 255, 255), { Transparency = 1, CanCollide = false, CanQuery = false, CastShadow = false })
-	title.CFrame = CFrame.lookAt(title.Position, localCF(A, 0, 60, 0).Position)
+	local title = box(m, A, "RebirthTitle", sx, 66, sz, 90, 18, 0.4, C(255, 255, 255), { Transparency = 1, CanCollide = false, CanQuery = false, CastShadow = false })
+	title.CFrame = CFrame.lookAt(title.Position, localCF(A, 0, 66, 0).Position)
 	WB.TextSurface(title, Enum.NormalId.Front, { { Text = "REBIRTH", Size = UDim2.fromScale(0.96, 0.9), Pos = UDim2.fromScale(0.02, 0.05), Color = GOLD, StrokeColor = C(120, 70, 0) } })
+	-- piso de honor: anillo dorado y círculo claro bajo las columnas
+	cyl(m, A, "HonorRing", sx, 0.35, sz, 100, 0.2, GOLD, DECO)
+	cyl(m, A, "HonorFloor", sx, 0.4, sz, 94, 0.2, C(238, 226, 196), DECO)
+	-- macetas con flores alrededor del anillo
+	for k = 0, 7 do
+		local ang = math.rad(10 + k * 30)
+		local fx, fz = sx + math.cos(ang) * 58, sz - math.sin(ang) * 58
+		if not (fx > sx + 20 and fz < sz - 20) then
+			box(m, A, "Planter", fx, 1.2, fz, 8, 2.4, 8, C(170, 120, 80))
+			scatter(m, A, "Bush", fx, fz, 0.9, rng)
+		end
+	end
+	-- obeliscos dorados a los lados de la entrada de la alfombra
+	for _, o in ipairs({ { -76, 50 }, { -50, 76 } }) do
+		box(m, A, "ObeliskBase", o[1], 1.5, o[2], 7, 3, 7, STONE)
+		box(m, A, "Obelisk", o[1], 13, o[2], 4, 20, 4, GOLD, { Material = Enum.Material.Metal, Reflectance = 0.1 })
+		part(m, { Name = "ObeliskOrb", Shape = Enum.PartType.Ball, Size = Vector3.new(4, 4, 4), CFrame = localCF(A, o[1], 25, o[2]), Color = C(255, 240, 180), Material = Enum.Material.Neon, CanCollide = false })
+	end
 	-- bancos y faroles en la plaza
 	for _, spot in ipairs({ { -80, 150 }, { -150, 60 }, { 40, 150 }, { -150, -20 } }) do place(m, A, "Bench", spot[1], spot[2], 1, sx, sz, true) end
 	for _, spot in ipairs({ { -64, 72 }, { 80, 76 }, { -70, -60 } }) do place(m, A, "StreetLamp", spot[1], spot[2], 1.1, 0, 0, true) end
