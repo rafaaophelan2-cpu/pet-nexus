@@ -61,8 +61,11 @@ Config.Eggs = {
 
 -- Moneda propia de cada mundo (modelo 3D en PetNexusAssets.Currency e ícono en Icons)
 -- PROVISIONAL: Greenwood usa los modelos de Angel Coin hasta que existan los suyos (Model "<X>" + Breakables "<X>Pile" + ícono).
+-- PLANTILLA DE MONEDA: todas comparten la misma forma (moneda gruesa con borde y una huella de mascota en el centro);
+-- cada mundo cambia color y detalles propios (Greenwood: oro con hojas y bellota; Nexus: blanco perla con halo y alitas).
+-- Modelos en ReplicatedStorage.PetNexusAssets.Currency/<Model> e íconos en .Icons/<Icon> (generados con el mismo prompt base).
 Config.Currencies = {
-	Greenwood = { Name = "Coins", Short = "Coins", Model = "AngelCoin", Icon = "AngelCoin", Color = Color3.fromRGB(255, 214, 90) },
+	Greenwood = { Name = "Coins", Short = "Coins", Model = "Coin", Icon = "Coin", Color = Color3.fromRGB(255, 214, 90) },
 	Nexus = { Name = "Angel Coins", Short = "Angel", Model = "AngelCoin", Icon = "AngelCoin", Color = Color3.fromRGB(255, 236, 170) },
 }
 function Config.CurrencyOf(dim)

@@ -1014,8 +1014,42 @@ tpButton.BackgroundColor3 = Color3.fromRGB(150, 110, 255)
 tpButton.Parent = gui
 round(tpButton, UDim.new(0, 22)); stroke(tpButton, 3, Color3.new(1, 1, 1), 0.3)
 gradient(tpButton, Color3.fromRGB(190, 160, 255), Color3.fromRGB(110, 70, 235))
-Icons.Make(tpButton, "Teleport", { Size = UDim2.fromOffset(64, 64), Position = UDim2.fromOffset(11, 2) })
+local TP_ICON = Assets.Icons:FindFirstChild("Remote") and "Remote" or "Teleport"
+local remoteIcon = Icons.Make(tpButton, TP_ICON, { Size = UDim2.fromOffset(66, 66), AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromOffset(43, 34) })
 label(tpButton, { Text = "TELEPORT", Size = UDim2.new(1, -10, 0, 16), Position = UDim2.fromOffset(5, 66) })
+-- control remoto animado: flota, se inclina y emite ondas de señal cada cierto tiempo
+do
+	local t0 = os.clock()
+	RunService.RenderStepped:Connect(function()
+		local t = os.clock() - t0
+		remoteIcon.Position = UDim2.fromOffset(43, 34 + math.sin(t * 2.4) * 2.5)
+		remoteIcon.Rotation = math.sin(t * 1.7) * 7
+	end)
+	task.spawn(function()
+		while tpButton.Parent do
+			task.wait(2.6)
+			for k = 0, 1 do
+				local ring = Instance.new("Frame")
+				ring.AnchorPoint = Vector2.new(0.5, 0.5)
+				ring.Position = UDim2.fromOffset(58, 12)
+				ring.Size = UDim2.fromOffset(8, 8)
+				ring.BackgroundTransparency = 1
+				ring.ZIndex = 3
+				round(ring, UDim.new(1, 0))
+				local rs = stroke(ring, 2.5, Color3.fromRGB(140, 240, 255), 0)
+				ring.Parent = tpButton
+				local info = TweenInfo.new(0.9, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+				TweenService:Create(ring, info, { Size = UDim2.fromOffset(38, 38) }):Play()
+				local f = TweenService:Create(rs, info, { Transparency = 1 })
+				f:Play()
+				f.Completed:Connect(function() ring:Destroy() end)
+				task.wait(0.25)
+			end
+		end
+	end)
+	tpButton.MouseEnter:Connect(function() TweenService:Create(remoteIcon, TweenInfo.new(0.15), { Size = UDim2.fromOffset(74, 74) }):Play() end)
+	tpButton.MouseLeave:Connect(function() TweenService:Create(remoteIcon, TweenInfo.new(0.15), { Size = UDim2.fromOffset(66, 66) }):Play() end)
+end
 
 local PANEL_W, PANEL_H = 800, 540
 local panel = Instance.new("Frame")
@@ -1029,14 +1063,14 @@ panel.ZIndex = 20
 panel.Parent = gui
 local panelScale = Instance.new("UIScale"); panelScale.Parent = panel
 
-Icons.Make(panel, "Teleport", { Size = UDim2.fromOffset(78, 78), Position = UDim2.fromOffset(28, -16), ZIndex = 26 })
+Icons.Make(panel, TP_ICON, { Size = UDim2.fromOffset(78, 78), Position = UDim2.fromOffset(28, -16), ZIndex = 26 })
 local titleLbl = label(panel, { Text = "Teleport!", Size = UDim2.fromOffset(380, 62), Position = UDim2.fromOffset(110, -6), TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 25 })
 titleLbl.UIStroke.Thickness = 5
 gradient(titleLbl, Color3.new(1, 1, 1), Color3.fromRGB(200, 230, 255))
 
 local body = Instance.new("Frame")
-body.Size = UDim2.new(1, -120, 1, -70)
-body.Position = UDim2.fromOffset(120, 60)
+body.Size = UDim2.new(1, -20, 1, -70)
+body.Position = UDim2.fromOffset(10, 60)
 body.BackgroundColor3 = Color3.fromRGB(252, 252, 255)
 body.ZIndex = 20
 body.Parent = panel
@@ -1046,42 +1080,22 @@ local closeBtn = button(panel, { Text = "", Size = UDim2.fromOffset(58, 58), Pos
 gradient(closeBtn, Color3.fromRGB(255, 120, 140), Color3.fromRGB(235, 50, 85))
 Icons.CloseGlyph(closeBtn)
 
-local tabs = Instance.new("Frame")
-tabs.Size = UDim2.new(0, 100, 1, -100)
-tabs.Position = UDim2.fromOffset(10, 80)
-tabs.BackgroundColor3 = Color3.fromRGB(252, 252, 255)
-tabs.ZIndex = 21
-tabs.Parent = panel
-round(tabs, UDim.new(0, 26)); stroke(tabs, 4)
-local tl = Instance.new("UIListLayout"); tl.Padding = UDim.new(0, 4); tl.HorizontalAlignment = Enum.HorizontalAlignment.Center; tl.SortOrder = Enum.SortOrder.LayoutOrder; tl.Parent = tabs
-local tp = Instance.new("UIPadding"); tp.PaddingTop = UDim.new(0, 10); tp.Parent = tabs
-
+-- lista de mundos (acordeón): cada mundo se despliega hacia abajo en una grilla 4x5 de áreas
 local content = Instance.new("ScrollingFrame")
-content.Size = UDim2.new(1, -24, 1, -86)
+content.Size = UDim2.new(1, -24, 1, -24)
 content.Position = UDim2.fromOffset(12, 12)
 content.BackgroundTransparency = 1
 content.BorderSizePixel = 0
 content.ScrollBarThickness = 6
 content.CanvasSize = UDim2.new()
+content.AutomaticCanvasSize = Enum.AutomaticSize.Y
 content.ZIndex = 21
 content.Parent = body
+local contentList = Instance.new("UIListLayout"); contentList.Padding = UDim.new(0, 10); contentList.SortOrder = Enum.SortOrder.LayoutOrder; contentList.Parent = content
+local contentPad = Instance.new("UIPadding"); contentPad.PaddingTop = UDim.new(0, 4); contentPad.PaddingBottom = UDim.new(0, 8); contentPad.PaddingLeft = UDim.new(0, 4); contentPad.PaddingRight = UDim.new(0, 10); contentPad.Parent = content
 
-local prog = Instance.new("Frame")
-prog.Size = UDim2.new(1, -60, 0, 58)
-prog.Position = UDim2.new(0, 30, 1, -70)
-prog.BackgroundColor3 = Color3.new(1, 1, 1)
-prog.ZIndex = 22
-prog.Parent = body
-round(prog, UDim.new(0, 29)); stroke(prog, 4)
-local progTitle = label(prog, { Text = "", Size = UDim2.new(1, -40, 0, 26), Position = UDim2.fromOffset(20, 2), ZIndex = 23 })
-local progBg = Instance.new("Frame"); progBg.Size = UDim2.new(1, -80, 0, 14); progBg.Position = UDim2.fromOffset(40, 32)
-progBg.BackgroundColor3 = Color3.fromRGB(215, 220, 235); progBg.ZIndex = 23; progBg.Parent = prog
-round(progBg, UDim.new(1, 0))
-local progFill = Instance.new("Frame"); progFill.Size = UDim2.fromScale(0, 1); progFill.BackgroundColor3 = Color3.new(1, 1, 1); progFill.ZIndex = 24; progFill.Parent = progBg
-round(progFill, UDim.new(1, 0))
-gradient(progFill, Color3.fromRGB(120, 230, 255), Color3.fromRGB(150, 120, 255), 0)
-
-local selectedDim = "Nexus"
+local selectedDim = Config.DimensionList[1].Id
+local expandedDim = nil -- mundo desplegado (uno a la vez)
 local function currentZone(dim)
 	local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
 	if not hrp or not Config.Dimensions[dim] then return nil end
@@ -1095,36 +1109,49 @@ local refreshPanel
 local function clear(frame)
 	for _, c in ipairs(frame:GetChildren()) do if c:IsA("GuiObject") then c:Destroy() end end
 end
-local function arrow(parent, center, dir)
+
+-- flecha "V" que apunta hacia abajo (gira 180° al desplegar)
+local function chevron(parent, pos)
 	local holder = Instance.new("Frame")
 	holder.BackgroundTransparency = 1
-	holder.Size = UDim2.fromOffset(30, 30)
 	holder.AnchorPoint = Vector2.new(0.5, 0.5)
-	holder.Position = UDim2.fromOffset(center.X, center.Y)
-	holder.Rotation = dir == "right" and 0 or (dir == "left" and 180 or 90)
-	holder.ZIndex = 22
+	holder.Size = UDim2.fromOffset(40, 40)
+	holder.Position = pos
+	holder.ZIndex = 24
 	holder.Parent = parent
-	local function bar(size, pos, rot)
-		local f = Instance.new("Frame"); f.AnchorPoint = Vector2.new(0.5, 0.5); f.Size = size; f.Position = pos; f.Rotation = rot
-		f.BackgroundColor3 = INK; f.ZIndex = 22; f.Parent = holder
+	for _, sx in ipairs({ -1, 1 }) do
+		local f = Instance.new("Frame")
+		f.AnchorPoint = Vector2.new(0.5, 0.5)
+		f.Size = UDim2.fromOffset(22, 8)
+		f.Position = UDim2.fromOffset(20 + sx * 7, 21)
+		f.Rotation = -sx * 42
+		f.BackgroundColor3 = INK
+		f.ZIndex = 24
+		f.Parent = holder
 		round(f, UDim.new(1, 0))
 	end
-	bar(UDim2.fromOffset(24, 7), UDim2.fromOffset(12, 15), 0)
-	bar(UDim2.fromOffset(15, 7), UDim2.fromOffset(21, 10), 40)
-	bar(UDim2.fromOffset(15, 7), UDim2.fromOffset(21, 20), -40)
+	return holder
 end
 
-local function card(parent, pos, size, idx, name, open, here, features)
+-- tarjeta de área: número arriba a la izquierda, nombre y máquinas disponibles
+local function card(parent, order, idx, name, open, here, features)
 	local base = open and Color3.fromRGB(115, 220, 75) or Color3.fromRGB(175, 172, 195)
-	local b = button(parent, { Text = "", Size = size, Position = pos, BackgroundColor3 = base, AutoButtonColor = open, ZIndex = 22 })
+	local b = button(parent, { Text = "", LayoutOrder = order, BackgroundColor3 = base, AutoButtonColor = open, ZIndex = 22 })
 	gradient(b, base:Lerp(Color3.new(1, 1, 1), 0.2), shade(base, 0.82))
 	if here then b.UIStroke.Color = Color3.fromRGB(255, 205, 60); b.UIStroke.Thickness = 5 end
+	local badge = Instance.new("Frame")
+	badge.Size = UDim2.fromOffset(38, 26)
+	badge.Position = UDim2.fromOffset(6, 6)
+	badge.BackgroundColor3 = Color3.new(1, 1, 1)
+	badge.ZIndex = 24
+	badge.Parent = b
+	round(badge, UDim.new(1, 0)); stroke(badge, 3)
+	label(badge, { Text = tostring(idx), Size = UDim2.new(1, -8, 1, -4), Position = UDim2.fromOffset(4, 2), TextColor3 = open and Color3.fromRGB(70, 150, 40) or Color3.fromRGB(120, 115, 145), ZIndex = 25 })
 	if not open then
-		Icons.Make(b, "Lock", { Size = UDim2.fromOffset(26, 26), Position = UDim2.fromOffset(14, 2), ZIndex = 24 })
+		Icons.Make(b, "Lock", { Size = UDim2.fromOffset(28, 28), Position = UDim2.new(1, -34, 0, 4), ZIndex = 24 })
 	end
-	label(b, { Text = "#" .. idx, Size = UDim2.new(1, open and -10 or -44, 0, 24), Position = UDim2.fromOffset(open and 5 or 38, 4), ZIndex = 23 })
-	label(b, { Text = name, Size = UDim2.new(1, -10, 0, 28), Position = UDim2.fromOffset(5, 30), ZIndex = 23 })
-	if here then Icons.Make(b, "Pin", { Size = UDim2.fromOffset(32, 32), Position = UDim2.new(1, -24, 0, -14), ZIndex = 25 }) end
+	label(b, { Text = name, Size = UDim2.new(1, -12, 0, 26), Position = UDim2.fromOffset(6, 36), ZIndex = 23 })
+	if here then Icons.Make(b, "Pin", { Size = UDim2.fromOffset(32, 32), Position = UDim2.new(1, -26, 0, -14), ZIndex = 25 }) end
 	local chips = {}
 	for _, f in ipairs(features or {}) do
 		local mdef = Config.Machines[f]
@@ -1135,7 +1162,7 @@ local function card(parent, pos, size, idx, name, open, here, features)
 		row.BackgroundColor3 = Color3.new(1, 1, 1)
 		row.AnchorPoint = Vector2.new(0.5, 0)
 		row.Size = UDim2.fromOffset(10 + #chips * 30, 30)
-		row.Position = UDim2.new(0.5, 0, 1, -33)
+		row.Position = UDim2.new(0.5, 0, 1, -36)
 		row.ZIndex = 24
 		row.Parent = b
 		round(row, UDim.new(1, 0)); stroke(row, 3)
@@ -1146,83 +1173,101 @@ local function card(parent, pos, size, idx, name, open, here, features)
 	return b
 end
 
-local function tab(order, iconName, text, selected, color, onClick)
-	local b = button(tabs, { Text = "", Size = UDim2.fromOffset(84, 64), BackgroundColor3 = selected and color:Lerp(Color3.new(1, 1, 1), 0.55) or Color3.new(1, 1, 1), LayoutOrder = order, ZIndex = 22 })
-	b.UIStroke.Thickness = selected and 3 or 0
-	Icons.Make(b, iconName, { Size = UDim2.fromOffset(42, 42), Position = UDim2.new(0.5, -21, 0, 0), ZIndex = 23 })
-	label(b, { Text = text, Size = UDim2.new(1, -4, 0, 18), Position = UDim2.fromOffset(2, 43), ZIndex = 23 })
-	b.MouseButton1Click:Connect(onClick)
-end
+local function worldRow(order, w)
+	local d = Config.Dimensions[w.Id]
+	local unlocked = (data and data.Unlocked[w.Id]) or 0
+	local playable = d ~= nil and unlocked >= 1
+	local expanded = expandedDim == w.Id
+	local color = w.Color or Color3.fromRGB(200, 200, 230)
 
-local function buildTabs()
-	clear(tabs)
-	tab(0, "Shop", "Lobby", false, Color3.new(1, 1, 1), function() requestTp(selectedDim, 0) end)
-	for i, w in ipairs(Config.DimensionList) do
-		local playable = Config.Dimensions[w.Id] ~= nil and data and (data.Unlocked[w.Id] or 0) >= 1
-		local iconName = playable and (Assets.Icons:FindFirstChild("World_" .. w.Id) and "World_" .. w.Id or "Pin") or "Lock"
-		tab(i, iconName, w.Display, w.Id == selectedDim, w.Color, function() selectedDim = w.Id; refreshPanel() end)
+	local head = Instance.new("TextButton")
+	head.Text = ""
+	head.AutoButtonColor = true
+	head.LayoutOrder = order * 2
+	head.Size = UDim2.new(1, 0, 0, 74)
+	head.BackgroundColor3 = playable and color:Lerp(Color3.new(1, 1, 1), 0.55) or Color3.fromRGB(215, 212, 228)
+	head.ZIndex = 22
+	head.Parent = content
+	round(head, UDim.new(0, 22)); stroke(head, 4)
+	gradient(head, Color3.new(1, 1, 1), Color3.fromRGB(225, 225, 240))
+	local iconName = playable and (Assets.Icons:FindFirstChild("World_" .. w.Id) and "World_" .. w.Id or "Pin") or "Lock"
+	Icons.Make(head, iconName, { Size = UDim2.fromOffset(58, 58), Position = UDim2.fromOffset(10, 8), ZIndex = 23 })
+	label(head, { Text = "Mundo " .. order .. " · " .. w.Display, Size = UDim2.fromOffset(360, 32), Position = UDim2.fromOffset(78, 6), TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = playable and Color3.new(1, 1, 1) or Color3.fromRGB(235, 232, 245), ZIndex = 23 })
+	if playable then
+		local barBg = Instance.new("Frame"); barBg.Size = UDim2.fromOffset(250, 12); barBg.Position = UDim2.fromOffset(80, 46)
+		barBg.BackgroundColor3 = Color3.fromRGB(215, 220, 235); barBg.ZIndex = 23; barBg.Parent = head
+		round(barBg, UDim.new(1, 0)); stroke(barBg, 2)
+		local fill = Instance.new("Frame"); fill.Size = UDim2.fromScale(math.clamp(unlocked / d.ZoneCount, 0, 1), 1); fill.BackgroundColor3 = Color3.new(1, 1, 1); fill.ZIndex = 24; fill.Parent = barBg
+		round(fill, UDim.new(1, 0))
+		gradient(fill, Color3.fromRGB(120, 230, 255), Color3.fromRGB(150, 120, 255), 0)
+		label(head, { Text = unlocked .. "/" .. d.ZoneCount, Size = UDim2.fromOffset(80, 20), Position = UDim2.fromOffset(338, 42), TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 23 })
+		local lobbyBtn = button(head, { Text = "", Size = UDim2.fromOffset(120, 46), Position = UDim2.new(1, -196, 0.5, -23), BackgroundColor3 = Color3.fromRGB(120, 200, 255), ZIndex = 24 })
+		gradient(lobbyBtn, Color3.fromRGB(150, 225, 255), Color3.fromRGB(80, 160, 245))
+		Icons.Make(lobbyBtn, "Shop", { Size = UDim2.fromOffset(36, 36), Position = UDim2.fromOffset(6, 5), ZIndex = 25 })
+		label(lobbyBtn, { Text = "Lobby", Size = UDim2.fromOffset(70, 28), Position = UDim2.fromOffset(44, 9), ZIndex = 25 })
+		lobbyBtn.MouseButton1Click:Connect(function() requestTp(w.Id, 0) end)
+	else
+		label(head, { Text = d and "Bloqueado" or "Próximamente", Size = UDim2.fromOffset(250, 22), Position = UDim2.fromOffset(80, 42), TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = Color3.fromRGB(255, 215, 90), ZIndex = 23 })
 	end
-	tabs.Size = UDim2.fromOffset(100, 20 + (#Config.DimensionList + 1) * 68)
-end
+	local chev = chevron(head, UDim2.new(1, -40, 0.5, 0))
+	chev.Rotation = expanded and 180 or 0
+	head.MouseButton1Click:Connect(function()
+		expandedDim = (expandedDim == w.Id) and nil or w.Id
+		selectedDim = w.Id
+		refreshPanel()
+	end)
 
-refreshPanel = function()
-	if not data then return end
-	buildTabs()
-	clear(content)
-	local info = Config.WorldInfo(selectedDim)
-	local d = Config.Dimensions[selectedDim]
-	local unlocked = data.Unlocked[selectedDim] or 0
-	if not d or unlocked < 1 then
-		content.CanvasSize = UDim2.new()
+	if not expanded then return end
+	if not playable then
+		local info = Instance.new("Frame")
+		info.LayoutOrder = order * 2 + 1
+		info.Size = UDim2.new(1, 0, 0, 70)
+		info.BackgroundTransparency = 1
+		info.Parent = content
 		local prev
-		for i, w in ipairs(Config.DimensionList) do
-			if w.Id == selectedDim and i > 1 then prev = Config.DimensionList[i - 1] end
-		end
-		Icons.Make(content, "Lock", { Size = UDim2.fromOffset(110, 110), Position = UDim2.new(0.5, -55, 0, 20), ZIndex = 22 })
-		label(content, { Text = info.Display, Size = UDim2.new(1, -40, 0, 56), Position = UDim2.fromOffset(20, 140), TextColor3 = info.Color, ZIndex = 22 })
-		label(content, { Text = d and "Bloqueado" or "Próximamente", Size = UDim2.new(1, -40, 0, 36), Position = UDim2.fromOffset(20, 200), TextColor3 = Color3.fromRGB(255, 215, 90), ZIndex = 22 })
-		if prev and prev.Vehicle then
-			label(content, { Text = "Se llega en el " .. prev.Vehicle .. " al final de " .. prev.Display .. " (requiere Esencia)",
-				Size = UDim2.new(1, -60, 0, 28), Position = UDim2.fromOffset(30, 246), ZIndex = 22 })
-		end
-		progTitle.Text = info.Display
-		progFill.Size = UDim2.fromScale(0, 1)
+		for i, x in ipairs(Config.DimensionList) do if x.Id == w.Id and i > 1 then prev = Config.DimensionList[i - 1] end end
+		local msg = (d and prev and prev.Vehicle) and ("Se llega en el " .. prev.Vehicle .. " al final de " .. prev.Display .. " (requiere Esencia)")
+			or (d and "Todavía no desbloqueas este mundo" or "Este mundo llega en un próximo update")
+		label(info, { Text = msg, Size = UDim2.new(1, -40, 0, 30), Position = UDim2.fromOffset(20, 18), ZIndex = 22 })
 		return
 	end
-	local here = currentZone(selectedDim)
-	local cols, cw, ch, gx, gy = 5, 104, 96, 20, 34
+	local here = currentZone(w.Id)
+	local cols = 4
+	local rows = math.ceil(d.ZoneCount / cols)
+	local cellH, pad = 108, 10
+	local grid = Instance.new("Frame")
+	grid.LayoutOrder = order * 2 + 1
+	grid.Size = UDim2.new(1, 0, 0, rows * (cellH + pad) + pad)
+	grid.BackgroundTransparency = 1
+	grid.ZIndex = 21
+	grid.Parent = content
+	local gl = Instance.new("UIGridLayout")
+	gl.CellSize = UDim2.new(1 / cols, -pad, 0, cellH)
+	gl.CellPadding = UDim2.fromOffset(pad, pad)
+	gl.FillDirectionMaxCells = cols
+	gl.SortOrder = Enum.SortOrder.LayoutOrder
+	gl.Parent = grid
+	local gp = Instance.new("UIPadding"); gp.PaddingTop = UDim.new(0, pad / 2); gp.PaddingLeft = UDim.new(0, pad / 2); gp.Parent = grid
 	for idx = 1, d.ZoneCount do
-		local r = math.floor((idx - 1) / cols)
-		local k = (idx - 1) % cols
-		local c = (r % 2 == 0) and k or (cols - 1 - k)
-		local x = 10 + c * (cw + gx)
-		local y = 12 + r * (ch + gy)
 		local area = d.Areas[idx]
 		local open = idx <= unlocked
 		local built = idx <= d.AreasBuilt
-		local b = card(content, UDim2.fromOffset(x, y), UDim2.fromOffset(cw, ch), idx, area.Name, open, here == idx, area.Features)
+		local b = card(grid, idx, idx, area.Name, open, here == idx, area.Features)
 		b.MouseButton1Click:Connect(function()
 			if not open then
 				notify(built and ("Desbloquea " .. area.Name .. " primero") or (area.Name .. " llega en el próximo update"), Color3.fromRGB(255, 170, 130))
 				return
 			end
 			if here == idx then return end
-			requestTp(selectedDim, idx)
+			requestTp(w.Id, idx)
 		end)
-		if idx < d.ZoneCount then
-			if k < cols - 1 then
-				local ax = (r % 2 == 0) and (x + cw + gx / 2) or (x - gx / 2)
-				arrow(content, Vector2.new(ax, y + ch / 2), (r % 2 == 0) and "right" or "left")
-			else
-				arrow(content, Vector2.new(x + cw / 2, y + ch + gy / 2), "down")
-			end
-		end
 	end
-	content.CanvasSize = UDim2.fromOffset(0, 24 + math.ceil(d.ZoneCount / cols) * (ch + gy))
-	local pct = math.floor(unlocked / d.ZoneCount * 100)
-	progTitle.Text = "Progreso de " .. info.Display .. ": " .. pct .. "% completado"
-	progFill.Size = UDim2.fromScale(unlocked / d.ZoneCount, 1)
-	if here then content.CanvasPosition = Vector2.new(0, math.max(0, math.floor((here - 1) / cols) * (ch + gy) - 40)) end
+end
+
+refreshPanel = function()
+	if not data then return end
+	clear(content)
+	for i, w in ipairs(Config.DimensionList) do worldRow(i, w) end
 end
 
 local function fitPanel()
@@ -1235,7 +1280,8 @@ fitPanel()
 local function togglePanel(show)
 	if show == nil then show = not panel.Visible end
 	if show then
-		for _, w in ipairs(Config.DimensionList) do if currentZone(w.Id) then selectedDim = w.Id end end
+		selectedDim = currentWorld() -- mundo donde está el jugador (área o lobby)
+		expandedDim = selectedDim
 		refreshPanel()
 		fitPanel()
 		local target = panelScale.Scale
